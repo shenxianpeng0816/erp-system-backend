@@ -9,6 +9,7 @@ import com.erp.util.JwtUtil;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -23,16 +24,20 @@ public class AuthController {
 
     @PostMapping("/login")
     public Result<LoginResponse> login(@Valid @RequestBody LoginRequest req) {
-        Authentication auth = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(req.getUsername(), req.getPassword()));
-        User user = (User) auth.getPrincipal();
-        String token = jwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole());
-        return Result.success(LoginResponse.builder()
-                .token(token)
-                .userId(user.getId())
-                .username(user.getUsername())
-                .realName(user.getRealName())
-                .role(user.getRole())
-                .build());
+        try {
+            Authentication auth = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(req.getUsername(), req.getPassword()));
+            User user = (User) auth.getPrincipal();
+            String token = jwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole());
+            return Result.success(LoginResponse.builder()
+                    .token(token)
+                    .userId(user.getId())
+                    .username(user.getUsername())
+                    .realName(user.getRealName())
+                    .role(user.getRole())
+                    .build());
+        } catch (BadCredentialsException e){
+            return Result.fail("Incorrect username or password");
+        }
     }
 }

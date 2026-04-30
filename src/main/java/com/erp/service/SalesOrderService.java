@@ -14,5 +14,7 @@ public interface SalesOrderService {
     List<SalesOrder> listPendingApprovals();
     List<SalesOrder> listAllOrders();
     SalesOrder getDetail(Long orderId);
+    /** Ensures the current user may read this order (used for items & approvals). */
+    void assertOrderViewable(Long orderId);
     SalesOrder confirmDelivery(Long orderId, String signImageUrl);
 }

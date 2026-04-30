@@ -33,9 +33,9 @@ public class SalesOrderController {
         return Result.success(orderService.createOrder(req));
     }
 
-    /** Sales: submit draft for approval */
+    /** Creator submits draft (owner check in service) */
     @PostMapping("/{id}/submit")
-    @PreAuthorize("hasAnyRole('SALES','ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public Result<SalesOrder> submit(@PathVariable Long id) {
         return Result.success(orderService.submitOrder(id));
     }
@@ -55,9 +55,9 @@ public class SalesOrderController {
         return Result.success(orderService.listMyOrders());
     }
 
-    /** Admin: all orders (full list for PC management view) */
+    /** Admin + warehouse: full list. FINANCE uses /finance; SALES uses /orders/mine. */
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','WAREHOUSE')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE')")
     public Result<List<SalesOrder>> all() {
         return Result.success(orderService.listAllOrders());
     }
@@ -78,12 +78,14 @@ public class SalesOrderController {
     /** Order items — includes product name/spec/unit via JOIN */
     @GetMapping("/{id}/items")
     public Result<List<SalesOrderItem>> items(@PathVariable Long id) {
+        orderService.assertOrderViewable(id);
         return Result.success(itemMapper.findWithProductByOrderId(id));
     }
 
     /** Approval history for an order */
     @GetMapping("/{id}/approvals")
     public Result<List<ApprovalFlow>> approvalHistory(@PathVariable Long id) {
+        orderService.assertOrderViewable(id);
         return Result.success(approvalFlowMapper.selectList(
                 new LambdaQueryWrapper<ApprovalFlow>()
                         .eq(ApprovalFlow::getOrderId, id)

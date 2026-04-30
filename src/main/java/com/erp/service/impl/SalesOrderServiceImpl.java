@@ -31,6 +31,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final InventoryMapper inventoryMapper;
     private final ReceivableMapper receivableMapper;
     private final DocSequenceService docSequenceService;
+    private final UserMapper userMapper;
 
     @Override
     @Transactional
@@ -75,11 +76,20 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         order.setStatus("PENDING_APPROVAL");
         orderMapper.updateById(order);
 
-        // Create initial approval flow entry (assign to any ADMIN)
+        User defaultApprover = userMapper.selectOne(
+                new LambdaQueryWrapper<User>()
+                        .eq(User::getRole, "ADMIN")
+                        .orderByAsc(User::getId)
+                        .last("LIMIT 1"));
+        if (defaultApprover == null) {
+            throw new BusinessException(
+                    "No active ADMIN user found. Create at least one admin account before submitting orders for approval.");
+        }
+
         ApprovalFlow flow = new ApprovalFlow();
         flow.setOrderId(orderId);
         flow.setStep(1);
-        flow.setApproverId(1L); // default admin; production: configurable
+        flow.setApproverId(defaultApprover.getId());
         flow.setStatus("PENDING");
         approvalMapper.insert(flow);
         return order;
@@ -153,7 +163,51 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
     @Override
     public SalesOrder getDetail(Long orderId) {
-        return orderMapper.selectById(orderId);
+        SalesOrder order = orderMapper.selectById(orderId);
+        if (order == null) throw new BusinessException("Order not found");
+        assertCanViewOrder(order);
+        return order;
+    }
+
+    @Override
+    public void assertOrderViewable(Long orderId) {
+        SalesOrder order = orderMapper.selectById(orderId);
+        if (order == null) throw new BusinessException("Order not found");
+        assertCanViewOrder(order);
+    }
+
+    /**
+     * SALES: only own orders. ADMIN: all. FINANCE: post-approval pipeline (e.g. from invoice).
+     * WAREHOUSE: all (ops / outbound). Others: no access.
+     */
+    private void assertCanViewOrder(SalesOrder order) {
+        String role = SecurityUtil.currentRole();
+        Long uid = SecurityUtil.currentUserId();
+        if ("ADMIN".equals(role)) {
+            return;
+        }
+        if ("SALES".equals(role)) {
+            if (!order.getSalesUserId().equals(uid)) {
+                throw new BusinessException("Access denied");
+            }
+            return;
+        }
+        if ("FINANCE".equals(role)) {
+            if (isFinanceViewableStatus(order.getStatus())) {
+                return;
+            }
+            throw new BusinessException("Access denied");
+        }
+        if ("WAREHOUSE".equals(role)) {
+            return;
+        }
+        throw new BusinessException("Access denied");
+    }
+
+    /** After approval: finance can open order (e.g. linked from Finance module). */
+    private static boolean isFinanceViewableStatus(String status) {
+        if (status == null) return false;
+        return "APPROVED".equals(status) || "SHIPPED".equals(status) || "CONFIRMED".equals(status);
     }
 
     @Override
