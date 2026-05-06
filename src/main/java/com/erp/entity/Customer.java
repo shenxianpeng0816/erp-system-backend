@@ -22,6 +22,15 @@ public class Customer {
     private BigDecimal creditLimit;
     private String remark;
 
+    /** KE / UG / TZ */
+    private String countryCode;
+    private LocalDateTime firstTransactionAt;
+    private String shopName;
+    /** 1=needs invoice */
+    private Integer invoiceRequired;
+    /** Stored path e.g. /uploads/customers/xxx.jpg */
+    private String photoUrl;
+
     /** 1=active, 0=disabled (soft delete) */
     @TableLogic(value = "1", delval = "0")
     private Integer status;

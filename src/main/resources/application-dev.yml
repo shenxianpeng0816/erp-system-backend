@@ -3,6 +3,10 @@ server:
   servlet:
     context-path: /api
 spring:
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
   datasource:
     url: jdbc:mysql://localhost:3306/erp_db?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
     username: ${MYSQL_USERNAME}
@@ -28,6 +32,9 @@ mybatis-plus:
 jwt:
   secret: ${JWT_SECRET}
   expiration: 86400000   # 24 hours in ms
+
+file:
+  upload-dir: ${FILE_UPLOAD_DIR:uploads}
 
 logging:
   level:

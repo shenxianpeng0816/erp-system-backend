@@ -29,6 +29,9 @@ jwt:
   secret: ${JWT_SECRET}
   expiration: 86400000   # 24 hours in ms
 
+file:
+  upload-dir: ${FILE_UPLOAD_DIR:/root/uploads}
+
 logging:
   level:
     com.erp: debug
