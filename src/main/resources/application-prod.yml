@@ -27,7 +27,7 @@ mybatis-plus:
 
 jwt:
   secret: ${JWT_SECRET}
-  expiration: 14400000   # 4 hours in ms
+  expiration: 120000   # 4 hours in ms
 
 file:
   upload-dir: ${FILE_UPLOAD_DIR:/root/uploads}
