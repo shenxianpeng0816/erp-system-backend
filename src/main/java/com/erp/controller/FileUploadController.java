@@ -3,6 +3,7 @@ package com.erp.controller;
 import com.erp.common.result.Result;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -29,9 +30,14 @@ public class FileUploadController {
     @Value("${file.upload-dir:uploads}")
     private String uploadDir;
 
+    /** Allowed subfolders under the upload root (caller sends as {@code scope}). */
+    private static final Set<String> UPLOAD_SCOPES = Set.of("customers", "inbound");
+
     @PostMapping("/upload")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
-    public Result<String> upload(@RequestParam("file") MultipartFile file) {
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','INBOUND')")
+    public Result<String> upload(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "scope", required = false, defaultValue = "defaults") String scope) {
         if (file == null || file.isEmpty()) {
             return Result.fail("File is required");
         }
@@ -44,6 +50,11 @@ public class FileUploadController {
         if (original != null && original.contains(".")) {
             ext = original.substring(original.lastIndexOf('.')).toLowerCase(Locale.ROOT);
         }
+        String folder = StringUtils.hasText(scope) ? scope.trim().toLowerCase(Locale.ROOT) : "defaults";
+        if (!UPLOAD_SCOPES.contains(folder)) {
+            return Result.fail("Invalid upload scope. Allowed: " + String.join(", ", UPLOAD_SCOPES));
+        }
+
         if (!Set.of(".jpg", ".jpeg", ".png", ".webp", ".gif").contains(ext)) {
             ext = switch (contentType.toLowerCase(Locale.ROOT)) {
                 case "image/jpeg", "image/jpg" -> ".jpg";
@@ -53,7 +64,7 @@ public class FileUploadController {
                 default -> ".jpg";
             };
         }
-        String filename = "customers/" + UUID.randomUUID() + ext;
+        String filename = folder + "/" + UUID.randomUUID() + ext;
         Path root = Paths.get(uploadDir).toAbsolutePath().normalize();
         Path target = root.resolve(filename);
         try {

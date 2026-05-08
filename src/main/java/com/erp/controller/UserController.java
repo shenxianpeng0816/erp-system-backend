@@ -1,6 +1,7 @@
 package com.erp.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.erp.common.exception.BusinessException;
 import com.erp.common.result.Result;
 import com.erp.entity.User;
 import com.erp.mapper.UserMapper;
@@ -11,6 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/users")
@@ -19,6 +21,23 @@ public class UserController {
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+
+    /** Active users with the given role (for dropdowns). Currently supports INBOUND only. */
+    @GetMapping("/by-role/{role}")
+    @PreAuthorize("hasAnyRole('ADMIN','INBOUND')")
+    public Result<List<User>> listByRole(@PathVariable String role) {
+        String r = role == null ? "" : role.trim().toUpperCase();
+        if (!Set.of("INBOUND").contains(r)) {
+            throw new BusinessException("Unsupported role filter");
+        }
+        List<User> users = userMapper.selectList(
+                new LambdaQueryWrapper<User>()
+                        .eq(User::getRole, r)
+                        .eq(User::getStatus, 1)
+                        .orderByAsc(User::getRealName));
+        users.forEach(u -> u.setPassword(null));
+        return Result.success(users);
+    }
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")

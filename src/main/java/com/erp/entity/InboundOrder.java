@@ -15,6 +15,14 @@ public class InboundOrder {
     private Long operatorId;
     private String status; // DRAFT / CONFIRMED / CANCELLED
     private String remark;
+    /** Delivery note / BOL image URL path under /uploads/ */
+    @TableField("document_url")
+    private String documentUrl;
+
+    /** Populated on read — not in DB */
+    @TableField(exist = false)
+    private String operatorName;
+
     private LocalDateTime inboundAt;
 
     @TableField(fill = FieldFill.INSERT)
