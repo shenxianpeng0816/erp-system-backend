@@ -13,5 +13,6 @@ public class InboundItem {
     private Long inboundId;
     private Long productId;
     private Integer qty;
+    /** Purchase / receipt unit cost for this line (stored only; confirm-inbound does not post to finance or change product list price). */
     private BigDecimal unitCost;
 }

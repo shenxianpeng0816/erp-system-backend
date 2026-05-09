@@ -45,6 +45,23 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         order.setPriceTerm(req.getPriceTerm());
         order.setValidityDays(req.getValidityDays() != null ? req.getValidityDays() : 30);
         order.setRemark(req.getRemark());
+
+        boolean etr = Boolean.TRUE.equals(req.getEtrRequired());
+        order.setEtrRequired(etr);
+        if (etr) {
+            if (req.getEtrCompanyName() == null || req.getEtrCompanyName().isBlank()) {
+                throw new BusinessException("Company name is required when ETR is required");
+            }
+            if (req.getEtrCompanyKraPin() == null || req.getEtrCompanyKraPin().isBlank()) {
+                throw new BusinessException("Company KRA PIN is required when ETR is required");
+            }
+            order.setEtrCompanyName(req.getEtrCompanyName().trim());
+            order.setEtrCompanyKraPin(req.getEtrCompanyKraPin().trim());
+        } else {
+            order.setEtrCompanyName(null);
+            order.setEtrCompanyKraPin(null);
+        }
+
         order.setStatus("DRAFT");
 
         BigDecimal total = BigDecimal.ZERO;

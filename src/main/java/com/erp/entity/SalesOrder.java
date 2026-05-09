@@ -21,6 +21,10 @@ public class SalesOrder {
     private String priceTerm;
     private Integer validityDays;
     private String remark;
+    /** Whether customer requires ETR (Electronic Tax Register) invoice details */
+    private Boolean etrRequired;
+    private String etrCompanyName;
+    private String etrCompanyKraPin;
     private String rejectReason;
     private String signImageUrl;
     private Long confirmedBy;

@@ -21,6 +21,11 @@ public class CreateOrderRequest {
     private Integer validityDays = 30;
     private String remark;
 
+    /** When true, {@code etrCompanyName} and {@code etrCompanyKraPin} are required */
+    private Boolean etrRequired;
+    private String etrCompanyName;
+    private String etrCompanyKraPin;
+
     @NotEmpty(message = "Order must have at least one item")
     @Valid
     private List<OrderItemRequest> items;
