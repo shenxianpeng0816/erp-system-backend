@@ -2,6 +2,7 @@ package com.erp.service;
 
 import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CreateOrderRequest;
+import com.erp.entity.ApprovalFlow;
 import com.erp.entity.SalesOrder;
 
 import java.util.List;
@@ -16,5 +17,6 @@ public interface SalesOrderService {
     SalesOrder getDetail(Long orderId);
     /** Ensures the current user may read this order (used for items & approvals). */
     void assertOrderViewable(Long orderId);
+    List<ApprovalFlow> listApprovalHistory(Long orderId);
     SalesOrder confirmDelivery(Long orderId, String signImageUrl);
 }

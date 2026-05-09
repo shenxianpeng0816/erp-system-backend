@@ -13,8 +13,13 @@ public class ApprovalFlow {
     private Long orderId;
     private Integer step;
     private Long approverId;
+    /** Filled when listing history; not persisted. */
+    @TableField(exist = false)
+    private String approverName;
     private String status; // PENDING / APPROVED / REJECTED / REDIRECTED
     private Long redirectTo;
+    @TableField(exist = false)
+    private String redirectToName;
     private String comment;
     private LocalDateTime actedAt;
 

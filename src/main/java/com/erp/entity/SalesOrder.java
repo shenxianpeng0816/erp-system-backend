@@ -15,6 +15,11 @@ public class SalesOrder {
     private Long salesUserId;
     private Long shipToCustomerId;
     private Long billToCustomerId;
+
+    @TableField(exist = false)
+    private String shipToCustomerName;
+    @TableField(exist = false)
+    private String billToCustomerName;
     private String status; // DRAFT/PENDING_APPROVAL/APPROVED/REJECTED/SHIPPED/CONFIRMED/CANCELLED
     private BigDecimal totalAmount;
     private String paymentMethod;

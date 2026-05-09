@@ -16,7 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +36,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final ReceivableMapper receivableMapper;
     private final DocSequenceService docSequenceService;
     private final UserMapper userMapper;
+    private final CustomerMapper customerMapper;
 
     @Override
     @Transactional
@@ -165,17 +170,23 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
     @Override
     public List<SalesOrder> listAllOrders() {
-        return orderMapper.findAll();
+        List<SalesOrder> list = orderMapper.findAll();
+        enrichCustomerNames(list);
+        return list;
     }
 
     @Override
     public List<SalesOrder> listMyOrders() {
-        return orderMapper.findBySalesUser(SecurityUtil.currentUserId());
+        List<SalesOrder> list = orderMapper.findBySalesUser(SecurityUtil.currentUserId());
+        enrichCustomerNames(list);
+        return list;
     }
 
     @Override
     public List<SalesOrder> listPendingApprovals() {
-        return orderMapper.findPendingApproval();
+        List<SalesOrder> list = orderMapper.findPendingApproval();
+        enrichCustomerNames(list);
+        return list;
     }
 
     @Override
@@ -183,7 +194,41 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         SalesOrder order = orderMapper.selectById(orderId);
         if (order == null) throw new BusinessException("Order not found");
         assertCanViewOrder(order);
+        enrichCustomerNames(List.of(order));
         return order;
+    }
+
+    /** Fills {@code shipToCustomerName} / {@code billToCustomerName} for list and detail APIs. */
+    private void enrichCustomerNames(List<SalesOrder> orders) {
+        if (orders == null || orders.isEmpty()) {
+            return;
+        }
+        Set<Long> ids = new HashSet<>();
+        for (SalesOrder o : orders) {
+            if (o.getShipToCustomerId() != null) {
+                ids.add(o.getShipToCustomerId());
+            }
+            if (o.getBillToCustomerId() != null) {
+                ids.add(o.getBillToCustomerId());
+            }
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        List<Customer> customers = customerMapper.selectList(
+                new LambdaQueryWrapper<Customer>().in(Customer::getId, ids));
+        Map<Long, String> names = new HashMap<>();
+        for (Customer c : customers) {
+            names.put(c.getId(), c.getName());
+        }
+        for (SalesOrder o : orders) {
+            if (o.getShipToCustomerId() != null) {
+                o.setShipToCustomerName(names.get(o.getShipToCustomerId()));
+            }
+            if (o.getBillToCustomerId() != null) {
+                o.setBillToCustomerName(names.get(o.getBillToCustomerId()));
+            }
+        }
     }
 
     @Override
@@ -221,6 +266,46 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         throw new BusinessException("Access denied");
     }
 
+    @Override
+    public List<ApprovalFlow> listApprovalHistory(Long orderId) {
+        assertOrderViewable(orderId);
+        List<ApprovalFlow> flows = approvalMapper.selectList(
+                new LambdaQueryWrapper<ApprovalFlow>()
+                        .eq(ApprovalFlow::getOrderId, orderId)
+                        .orderByAsc(ApprovalFlow::getStep));
+        if (flows.isEmpty()) {
+            return flows;
+        }
+        Set<Long> userIds = new HashSet<>();
+        for (ApprovalFlow f : flows) {
+            if (f.getApproverId() != null) {
+                userIds.add(f.getApproverId());
+            }
+            if (f.getRedirectTo() != null) {
+                userIds.add(f.getRedirectTo());
+            }
+        }
+        if (userIds.isEmpty()) {
+            return flows;
+        }
+        List<User> users = userMapper.selectBatchIds(userIds);
+        Map<Long, String> idToDisplay = new HashMap<>();
+        for (User u : users) {
+            if (u != null && u.getId() != null) {
+                idToDisplay.put(u.getId(), userDisplayName(u));
+            }
+        }
+        for (ApprovalFlow f : flows) {
+            if (f.getApproverId() != null) {
+                f.setApproverName(idToDisplay.get(f.getApproverId()));
+            }
+            if (f.getRedirectTo() != null) {
+                f.setRedirectToName(idToDisplay.get(f.getRedirectTo()));
+            }
+        }
+        return flows;
+    }
+
     /** After approval: finance can open order (e.g. linked from Finance module). */
     private static boolean isFinanceViewableStatus(String status) {
         if (status == null) return false;
@@ -242,6 +327,13 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    private static String userDisplayName(User u) {
+        if (u.getRealName() != null && !u.getRealName().isBlank()) {
+            return u.getRealName().trim();
+        }
+        return u.getUsername() != null ? u.getUsername() : "";
+    }
 
     private SalesOrder getAndValidateOwner(Long orderId) {
         SalesOrder order = orderMapper.selectById(orderId);

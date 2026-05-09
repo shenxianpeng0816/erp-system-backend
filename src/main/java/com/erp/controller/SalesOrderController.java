@@ -1,13 +1,11 @@
 package com.erp.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.erp.common.result.Result;
 import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CreateOrderRequest;
 import com.erp.entity.ApprovalFlow;
 import com.erp.entity.SalesOrder;
 import com.erp.entity.SalesOrderItem;
-import com.erp.mapper.ApprovalFlowMapper;
 import com.erp.mapper.SalesOrderItemMapper;
 import com.erp.service.SalesOrderService;
 import jakarta.validation.Valid;
@@ -24,7 +22,6 @@ public class SalesOrderController {
 
     private final SalesOrderService orderService;
     private final SalesOrderItemMapper itemMapper;
-    private final ApprovalFlowMapper approvalFlowMapper;
 
     /** Sales: create draft order */
     @PostMapping
@@ -85,11 +82,7 @@ public class SalesOrderController {
     /** Approval history for an order */
     @GetMapping("/{id}/approvals")
     public Result<List<ApprovalFlow>> approvalHistory(@PathVariable Long id) {
-        orderService.assertOrderViewable(id);
-        return Result.success(approvalFlowMapper.selectList(
-                new LambdaQueryWrapper<ApprovalFlow>()
-                        .eq(ApprovalFlow::getOrderId, id)
-                        .orderByAsc(ApprovalFlow::getStep)));
+        return Result.success(orderService.listApprovalHistory(id));
     }
 
     /** Sales: confirm delivery + upload sign image URL */
