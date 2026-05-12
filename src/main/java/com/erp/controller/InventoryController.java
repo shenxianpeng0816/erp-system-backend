@@ -1,6 +1,7 @@
 package com.erp.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.erp.common.exception.BusinessException;
 import com.erp.common.result.Result;
 import com.erp.entity.Inventory;
 import com.erp.entity.InventoryLog;
@@ -69,9 +70,36 @@ public class InventoryController {
 
     @PutMapping("/products/{id}")
     @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE')")
-    public Result<Product> updateProduct(@PathVariable Long id, @RequestBody Product product) {
-        product.setId(id);
-        productMapper.updateById(product);
-        return Result.success(product);
+    public Result<Product> updateProduct(@PathVariable Long id, @RequestBody Product body) {
+        Product existing = productMapper.selectById(id);
+        if (existing == null) throw new BusinessException("Product not found");
+        if (body.getProductNo() != null) existing.setProductNo(body.getProductNo());
+        if (body.getName() != null) existing.setName(body.getName());
+        if (body.getSpec() != null) existing.setSpec(body.getSpec());
+        if (body.getCategory() != null) existing.setCategory(body.getCategory());
+        if (body.getUnit() != null) existing.setUnit(body.getUnit());
+        if (body.getUnitPrice() != null) existing.setUnitPrice(body.getUnitPrice());
+        if (body.getImageUrl() != null) existing.setImageUrl(body.getImageUrl());
+        if (body.getRemark() != null) existing.setRemark(body.getRemark());
+        productMapper.updateById(existing);
+        return Result.success(existing);
+    }
+
+    /**
+     * Soft-deletes the product ({@code status=0}). Blocked while on-hand inventory quantity is positive.
+     */
+    @DeleteMapping("/products/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE')")
+    public Result<Void> deleteProduct(@PathVariable Long id) {
+        Product existing = productMapper.selectById(id);
+        if (existing == null) throw new BusinessException("Product not found");
+        Inventory inv = inventoryMapper.selectOne(
+                new LambdaQueryWrapper<Inventory>().eq(Inventory::getProductId, id));
+        if (inv != null && inv.getQty() != null && inv.getQty() > 0) {
+            throw new BusinessException(
+                    "Cannot delete product with remaining stock. Please clear the inventory first.");
+        }
+        productMapper.deleteById(id);
+        return Result.success();
     }
 }

@@ -266,6 +266,19 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         throw new BusinessException("Access denied");
     }
 
+    /** Admin may modify any order; sales may modify only own orders. */
+    private void assertAdminOrOrderOwner(SalesOrder order) {
+        String role = SecurityUtil.currentRole();
+        Long uid = SecurityUtil.currentUserId();
+        if ("ADMIN".equals(role)) {
+            return;
+        }
+        if ("SALES".equals(role) && order.getSalesUserId().equals(uid)) {
+            return;
+        }
+        throw new BusinessException("Access denied");
+    }
+
     @Override
     public List<ApprovalFlow> listApprovalHistory(Long orderId) {
         assertOrderViewable(orderId);
@@ -323,6 +336,79 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         order.setConfirmedBy(SecurityUtil.currentUserId());
         order.setConfirmedAt(LocalDateTime.now());
         orderMapper.updateById(order);
+        return order;
+    }
+
+    @Override
+    @Transactional
+    public void deleteOrder(Long orderId) {
+        SalesOrder order = orderMapper.selectById(orderId);
+        if (order == null) throw new BusinessException("Order not found");
+        if (!"ADMIN".equals(SecurityUtil.currentRole())) {
+            throw new BusinessException("Access denied");
+        }
+        String st = order.getStatus();
+        if (!"DRAFT".equals(st) && !"PENDING_APPROVAL".equals(st) && !"REJECTED".equals(st)) {
+            throw new BusinessException("Only draft, pending approval, or rejected orders can be deleted");
+        }
+        approvalMapper.delete(
+                new LambdaQueryWrapper<ApprovalFlow>().eq(ApprovalFlow::getOrderId, orderId));
+        orderMapper.deleteById(orderId);
+    }
+
+    @Override
+    @Transactional
+    public SalesOrder updatePendingOrder(Long orderId, CreateOrderRequest req) {
+        SalesOrder order = orderMapper.selectById(orderId);
+        if (order == null) throw new BusinessException("Order not found");
+        if (!"PENDING_APPROVAL".equals(order.getStatus()) && !"DRAFT".equals(order.getStatus())) {
+            throw new BusinessException("Only draft or pending approval orders can be edited");
+        }
+        assertAdminOrOrderOwner(order);
+
+        order.setShipToCustomerId(req.getShipToCustomerId());
+        order.setBillToCustomerId(req.getBillToCustomerId());
+        order.setPaymentMethod(req.getPaymentMethod());
+        order.setPriceTerm(req.getPriceTerm());
+        order.setValidityDays(req.getValidityDays() != null ? req.getValidityDays() : 30);
+        order.setRemark(req.getRemark());
+
+        boolean etr = Boolean.TRUE.equals(req.getEtrRequired());
+        order.setEtrRequired(etr);
+        if (etr) {
+            if (req.getEtrCompanyName() == null || req.getEtrCompanyName().isBlank()) {
+                throw new BusinessException("Company name is required when ETR is required");
+            }
+            if (req.getEtrCompanyKraPin() == null || req.getEtrCompanyKraPin().isBlank()) {
+                throw new BusinessException("Company KRA PIN is required when ETR is required");
+            }
+            order.setEtrCompanyName(req.getEtrCompanyName().trim());
+            order.setEtrCompanyKraPin(req.getEtrCompanyKraPin().trim());
+        } else {
+            order.setEtrCompanyName(null);
+            order.setEtrCompanyKraPin(null);
+        }
+
+        itemMapper.delete(
+                new LambdaQueryWrapper<SalesOrderItem>().eq(SalesOrderItem::getOrderId, orderId));
+
+        BigDecimal total = BigDecimal.ZERO;
+        for (CreateOrderRequest.OrderItemRequest i : req.getItems()) {
+            SalesOrderItem item = new SalesOrderItem();
+            item.setOrderId(orderId);
+            item.setProductId(i.getProductId());
+            item.setQty(i.getQty());
+            item.setUnitPrice(i.getUnitPrice());
+            BigDecimal lineTotal = i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQty()));
+            item.setTotal(lineTotal);
+            item.setRemark(i.getRemark());
+            itemMapper.insert(item);
+            total = total.add(lineTotal);
+        }
+
+        order.setTotalAmount(total);
+        orderMapper.updateById(order);
+        enrichCustomerNames(List.of(order));
         return order;
     }
 

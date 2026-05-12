@@ -31,8 +31,7 @@ public class Customer {
     /** Stored path e.g. /uploads/customers/xxx.jpg */
     private String photoUrl;
 
-    /** 1=active, 0=disabled (soft delete) */
-    @TableLogic(value = "1", delval = "0")
+    /** 1 = active, 0 = logically deleted (list/detail filtered for non-admin in API) */
     private Integer status;
     private Long createdBy;
 

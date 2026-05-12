@@ -60,7 +60,7 @@ public class FinanceController {
 
     /** Record a payment against a receivable */
     @PostMapping("/receivables/{id}/pay")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public Result<Receivable> recordPayment(@PathVariable Long id,
                                             @RequestBody PaymentRequest req) {

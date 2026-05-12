@@ -92,4 +92,20 @@ public class SalesOrderController {
                                       @RequestParam(required = false) String signImageUrl) {
         return Result.success(orderService.confirmDelivery(id, signImageUrl));
     }
+
+    /** Admin or sales owner: update draft or pending-approval order */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','SALES')")
+    public Result<SalesOrder> update(@PathVariable Long id,
+                                     @Valid @RequestBody CreateOrderRequest req) {
+        return Result.success(orderService.updatePendingOrder(id, req));
+    }
+
+    /** Admin only (same as order approval): delete draft / pending / rejected orders */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result<Void> delete(@PathVariable Long id) {
+        orderService.deleteOrder(id);
+        return Result.success();
+    }
 }
