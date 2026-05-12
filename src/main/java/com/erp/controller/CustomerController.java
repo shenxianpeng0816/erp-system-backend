@@ -20,20 +20,27 @@ public class CustomerController {
 
     private final CustomerMapper customerMapper;
 
-    /** Auto-complete search by name or customer_no — active customers only */
+    /** Active customers only; SALES scope = own {@code created_by} */
     @GetMapping("/search")
     public Result<List<Customer>> search(@RequestParam String keyword) {
-        return Result.success(customerMapper.searchByKeyword(keyword));
+        Long createdByFilter = "SALES".equals(SecurityUtil.currentRole()) ? SecurityUtil.currentUserId() : null;
+        return Result.success(customerMapper.searchByKeyword(keyword, createdByFilter));
     }
 
     /**
-     * List customers. Default: {@code status = 1} only (dropdowns & all normal list UIs).
-     * ADMIN may pass {@code includeDeleted=true} to include logically deleted rows (customer admin screen).
+     * List customers. Default {@code status = 1} only.
+     * SALES: only rows they created. ADMIN/FINANCE: all active (FINANCE) or all + deleted with {@code includeDeleted=true} (ADMIN).
      */
     @GetMapping
     public Result<List<Customer>> list(@RequestParam(required = false) Boolean includeDeleted) {
         LambdaQueryWrapper<Customer> q = new LambdaQueryWrapper<>();
-        boolean admin = "ADMIN".equals(SecurityUtil.currentRole());
+        String role = SecurityUtil.currentRole();
+        boolean admin = "ADMIN".equals(role);
+
+        if ("SALES".equals(role)) {
+            q.eq(Customer::getCreatedBy, SecurityUtil.currentUserId());
+        }
+
         if (!admin || !Boolean.TRUE.equals(includeDeleted)) {
             q.eq(Customer::getStatus, 1);
         }
@@ -41,14 +48,21 @@ public class CustomerController {
         return Result.success(customerMapper.selectList(q));
     }
 
-    /** Detail: non-admin cannot load logically deleted customers */
     @GetMapping("/{id}")
     public Result<Customer> get(@PathVariable Long id) {
         Customer c = customerMapper.selectById(id);
         if (c == null) {
             throw new BusinessException("Customer not found");
         }
-        if (!"ADMIN".equals(SecurityUtil.currentRole())) {
+        String role = SecurityUtil.currentRole();
+        if ("SALES".equals(role)) {
+            if (c.getCreatedBy() == null || !c.getCreatedBy().equals(SecurityUtil.currentUserId())) {
+                throw new BusinessException("Customer not found");
+            }
+            if (c.getStatus() == null || c.getStatus() != 1) {
+                throw new BusinessException("Customer not found");
+            }
+        } else if (!"ADMIN".equals(role)) {
             if (c.getStatus() == null || c.getStatus() != 1) {
                 throw new BusinessException("Customer not found");
             }
@@ -57,7 +71,7 @@ public class CustomerController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','SALES')")
     public Result<Customer> create(@RequestBody Customer customer) {
         customer.setCreatedBy(SecurityUtil.currentUserId());
         customer.setStatus(1);
@@ -66,18 +80,30 @@ public class CustomerController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','SALES')")
     public Result<Customer> update(@PathVariable Long id, @RequestBody Customer customer) {
         Customer existing = customerMapper.selectById(id);
         if (existing == null) {
             throw new BusinessException("Customer not found");
         }
-        if (!"ADMIN".equals(SecurityUtil.currentRole())) {
+        String role = SecurityUtil.currentRole();
+        if ("SALES".equals(role)) {
+            if (existing.getCreatedBy() == null || !existing.getCreatedBy().equals(SecurityUtil.currentUserId())) {
+                throw new BusinessException("Access denied");
+            }
+            if (existing.getStatus() == null || existing.getStatus() != 1) {
+                throw new BusinessException("Cannot update deleted customer");
+            }
+        } else if (!"ADMIN".equals(role)) {
             if (existing.getStatus() == null || existing.getStatus() != 1) {
                 throw new BusinessException("Cannot update deleted customer");
             }
         }
+
         customer.setId(id);
+        if (!"ADMIN".equals(role)) {
+            customer.setCreatedBy(existing.getCreatedBy());
+        }
         customerMapper.updateById(customer);
         return Result.success(customerMapper.selectById(id));
     }
