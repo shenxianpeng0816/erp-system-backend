@@ -102,7 +102,9 @@ public class InboundController {
     public Result<InboundOrder> confirm(@PathVariable Long id) {
         InboundOrder order = inboundMapper.selectById(id);
         if (order == null) throw new BusinessException("Inbound order not found");
-        if (!"DRAFT".equals(order.getStatus())) throw new BusinessException("Already confirmed");
+        if (!"DRAFT".equals(order.getStatus())) {
+            throw new BusinessException("Only draft inbound orders can be confirmed");
+        }
 
         Long operatorId = SecurityUtil.currentUserId();
 
@@ -144,6 +146,47 @@ public class InboundController {
         order.setInboundAt(LocalDateTime.now());
         inboundMapper.updateById(order);
         return Result.success(order);
+    }
+
+    /** Reject draft — closes order without inventory change */
+    @PostMapping("/{id}/reject")
+    @PreAuthorize("hasAnyRole('ADMIN','INBOUND')")
+    @Transactional
+    public Result<InboundOrder> reject(
+            @PathVariable Long id,
+            @RequestBody(required = false) RejectInboundRequest body) {
+        InboundOrder order = inboundMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException("Inbound order not found");
+        }
+        if (!"DRAFT".equals(order.getStatus())) {
+            throw new BusinessException("Only draft inbound orders can be rejected");
+        }
+        order.setStatus("REJECTED");
+        String reason = body != null && body.getReason() != null ? body.getReason().trim() : "";
+        if (!reason.isEmpty()) {
+            String base = order.getRemark() != null ? order.getRemark().trim() : "";
+            order.setRemark(base.isEmpty() ? "Rejected: " + reason : base + " | Rejected: " + reason);
+        }
+        inboundMapper.updateById(order);
+        enrichOperatorName(order);
+        return Result.success(order);
+    }
+
+    /** Admin only — cannot delete confirmed (stock already applied). */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public Result<Void> delete(@PathVariable Long id) {
+        InboundOrder order = inboundMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException("Inbound order not found");
+        }
+        if ("CONFIRMED".equals(order.getStatus())) {
+            throw new BusinessException("Cannot delete a confirmed inbound order");
+        }
+        inboundMapper.deleteById(id);
+        return Result.success();
     }
 
     @PutMapping("/{id}")
@@ -243,5 +286,11 @@ public class InboundController {
             private Integer qty;
             private java.math.BigDecimal unitCost;
         }
+    }
+
+    @Data
+    public static class RejectInboundRequest {
+        /** Appended to remark when present */
+        private String reason;
     }
 }

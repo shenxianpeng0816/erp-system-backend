@@ -1,9 +1,13 @@
 package com.erp.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.erp.common.dto.PageResult;
 import com.erp.common.exception.BusinessException;
 import com.erp.common.result.Result;
+import com.erp.entity.SysOperationLog;
 import com.erp.entity.User;
+import com.erp.mapper.SysOperationLogMapper;
 import com.erp.mapper.UserMapper;
 import com.erp.util.SecurityUtil;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +24,7 @@ import java.util.Set;
 public class UserController {
 
     private final UserMapper userMapper;
+    private final SysOperationLogMapper operationLogMapper;
     private final PasswordEncoder passwordEncoder;
 
     /** Active users with the given role (for dropdowns). Currently supports INBOUND only. */
@@ -37,6 +42,26 @@ public class UserController {
                         .orderByAsc(User::getRealName));
         users.forEach(u -> u.setPassword(null));
         return Result.success(users);
+    }
+
+    @GetMapping("/operation-logs")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result<PageResult<SysOperationLog>> operationLogs(
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "20") long size) {
+        if (page < 1) page = 1;
+        if (size < 1) size = 20;
+        if (size > 100) size = 100;
+        Page<SysOperationLog> p = new Page<>(page, size);
+        Page<SysOperationLog> result = operationLogMapper.selectPage(
+                p,
+                new LambdaQueryWrapper<SysOperationLog>().orderByDesc(SysOperationLog::getOperationAt));
+        PageResult<SysOperationLog> pr = new PageResult<>();
+        pr.setRecords(result.getRecords());
+        pr.setTotal(result.getTotal());
+        pr.setCurrent(result.getCurrent());
+        pr.setSize(result.getSize());
+        return Result.success(pr);
     }
 
     @GetMapping

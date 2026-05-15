@@ -54,6 +54,19 @@ public class InventoryController {
         return Result.success(inventoryLogMapper.findByRef(refId, refType));
     }
 
+    /**
+     * All stock movement rows (inbound/outbound/adjust), newest first.
+     * Capped for UI performance.
+     */
+    @GetMapping("/transaction-logs")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND','FINANCE')")
+    public Result<List<InventoryLog>> transactionLogs() {
+        return Result.success(inventoryLogMapper.selectList(
+                new LambdaQueryWrapper<InventoryLog>()
+                        .orderByDesc(InventoryLog::getCreatedAt)
+                        .last("LIMIT 3000")));
+    }
+
     @GetMapping("/products")
     public Result<List<Product>> products() {
         return Result.success(productMapper.selectList(

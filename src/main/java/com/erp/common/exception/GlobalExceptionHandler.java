@@ -2,6 +2,7 @@ package com.erp.common.exception;
 
 import com.erp.common.result.Result;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -15,6 +16,12 @@ public class GlobalExceptionHandler {
     public Result<?> handleBusiness(BusinessException e) {
         log.warn("Business error: {}", e.getMessage());
         return Result.fail(e.getCode(), e.getMessage());
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public Result<?> handleAccessDenied(AccessDeniedException e) {
+        log.warn("Access denied: {}", e.getMessage());
+        return Result.fail(403, "Access denied");
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, BindException.class})

@@ -13,7 +13,8 @@ public class InboundOrder {
     private String inboundNo;
     private String supplier;
     private Long operatorId;
-    private String status; // DRAFT / CONFIRMED / CANCELLED
+    /** DRAFT / CONFIRMED / CANCELLED / REJECTED */
+    private String status;
     private String remark;
     /** Delivery note / BOL image URL path under /uploads/ */
     @TableField("document_url")
