@@ -52,9 +52,9 @@ public class SalesOrderController {
         return Result.success(orderService.listMyOrders());
     }
 
-    /** Admin + warehouse: full list. FINANCE uses /finance; SALES uses /orders/mine. */
+    /** Admin + warehouse + inbound: full list. FINANCE uses /finance; SALES uses /orders/mine. */
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
     public Result<List<SalesOrder>> all() {
         return Result.success(orderService.listAllOrders());
     }

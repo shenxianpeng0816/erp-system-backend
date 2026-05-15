@@ -34,7 +34,7 @@ public class FileUploadController {
     private static final Set<String> UPLOAD_SCOPES = Set.of("customers", "inbound");
 
     @PostMapping("/upload")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','INBOUND')")
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','INBOUND','WAREHOUSE')")
     public Result<String> upload(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "scope", required = false, defaultValue = "defaults") String scope) {

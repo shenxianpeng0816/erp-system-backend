@@ -240,7 +240,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
     /**
      * SALES: only own orders. ADMIN: all. FINANCE: post-approval pipeline (e.g. from invoice).
-     * WAREHOUSE: all (ops / outbound). Others: no access.
+     * WAREHOUSE / INBOUND: all (ops / outbound / inbound). Others: no access.
      */
     private void assertCanViewOrder(SalesOrder order) {
         String role = SecurityUtil.currentRole();
@@ -260,7 +260,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             }
             throw new BusinessException("Access denied");
         }
-        if ("WAREHOUSE".equals(role)) {
+        if ("WAREHOUSE".equals(role) || "INBOUND".equals(role)) {
             return;
         }
         throw new BusinessException("Access denied");

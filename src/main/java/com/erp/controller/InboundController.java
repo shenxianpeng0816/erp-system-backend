@@ -26,6 +26,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class InboundController {
 
+    /** Users eligible as inbound document operator (WAREHOUSE aligned with INBOUND). */
+    private static final Set<String> INBOUND_OPERATOR_ROLES = Set.of("INBOUND", "WAREHOUSE");
+
     private final InboundOrderMapper inboundMapper;
     private final InboundItemMapper inboundItemMapper;
     private final InventoryMapper inventoryMapper;
@@ -58,7 +61,7 @@ public class InboundController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND')")
+    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
     @Transactional
     public Result<InboundOrder> create(@RequestBody CreateInboundRequest req) {
         if (req.getOperatorId() == null) {
@@ -68,8 +71,8 @@ public class InboundController {
         if (operator == null || operator.getStatus() == null || operator.getStatus() != 1) {
             throw new BusinessException("Invalid inbound operator");
         }
-        if (!"INBOUND".equals(operator.getRole())) {
-            throw new BusinessException("Operator must be an INBOUND user");
+        if (!INBOUND_OPERATOR_ROLES.contains(operator.getRole())) {
+            throw new BusinessException("Operator must be a warehouse or inbound user");
         }
 
         InboundOrder order = new InboundOrder();
@@ -97,7 +100,7 @@ public class InboundController {
 
     /** Confirm inbound → add to inventory + write log */
     @PostMapping("/{id}/confirm")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND')")
+    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
     @Transactional
     public Result<InboundOrder> confirm(@PathVariable Long id) {
         InboundOrder order = inboundMapper.selectById(id);
@@ -150,7 +153,7 @@ public class InboundController {
 
     /** Reject draft — closes order without inventory change */
     @PostMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND')")
+    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
     @Transactional
     public Result<InboundOrder> reject(
             @PathVariable Long id,
@@ -190,7 +193,7 @@ public class InboundController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND')")
+    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
     @Transactional
     public Result<InboundOrder> update(@PathVariable Long id, @RequestBody CreateInboundRequest req) {
         InboundOrder order = inboundMapper.selectById(id);
@@ -204,8 +207,8 @@ public class InboundController {
         if (operator == null || operator.getStatus() == null || operator.getStatus() != 1) {
             throw new BusinessException("Invalid inbound operator");
         }
-        if (!"INBOUND".equals(operator.getRole())) {
-            throw new BusinessException("Operator must be an INBOUND user");
+        if (!INBOUND_OPERATOR_ROLES.contains(operator.getRole())) {
+            throw new BusinessException("Operator must be a warehouse or inbound user");
         }
         if (req.getItems() == null || req.getItems().isEmpty()) {
             throw new BusinessException("At least one line item is required");
@@ -274,7 +277,7 @@ public class InboundController {
     public static class CreateInboundRequest {
         private String supplier;
         private String remark;
-        /** Must reference an active user with role INBOUND */
+        /** Must reference an active user with role INBOUND or WAREHOUSE */
         private Long operatorId;
         /** Optional — delivery note / signed receipt image URL from /files/upload */
         private String documentUrl;

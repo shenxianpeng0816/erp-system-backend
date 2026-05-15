@@ -27,19 +27,27 @@ public class UserController {
     private final SysOperationLogMapper operationLogMapper;
     private final PasswordEncoder passwordEncoder;
 
-    /** Active users with the given role (for dropdowns). Currently supports INBOUND only. */
+    /**
+     * Active users for role-based dropdowns.
+     * {@code INBOUND} returns INBOUND + WAREHOUSE (both may act as inbound operator).
+     * {@code WAREHOUSE} returns WAREHOUSE only.
+     */
     @GetMapping("/by-role/{role}")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND')")
+    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
     public Result<List<User>> listByRole(@PathVariable String role) {
         String r = role == null ? "" : role.trim().toUpperCase();
-        if (!Set.of("INBOUND").contains(r)) {
+        if (!Set.of("INBOUND", "WAREHOUSE").contains(r)) {
             throw new BusinessException("Unsupported role filter");
         }
-        List<User> users = userMapper.selectList(
-                new LambdaQueryWrapper<User>()
-                        .eq(User::getRole, r)
-                        .eq(User::getStatus, 1)
-                        .orderByAsc(User::getRealName));
+        LambdaQueryWrapper<User> q = new LambdaQueryWrapper<User>()
+                .eq(User::getStatus, 1)
+                .orderByAsc(User::getRealName);
+        if ("INBOUND".equals(r)) {
+            q.in(User::getRole, List.of("INBOUND", "WAREHOUSE"));
+        } else {
+            q.eq(User::getRole, "WAREHOUSE");
+        }
+        List<User> users = userMapper.selectList(q);
         users.forEach(u -> u.setPassword(null));
         return Result.success(users);
     }

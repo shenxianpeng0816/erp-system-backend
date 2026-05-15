@@ -74,7 +74,7 @@ public class InventoryController {
     }
 
     @PostMapping("/products")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
     public Result<Product> createProduct(@RequestBody Product product) {
         product.setStatus(1);
         productMapper.insert(product);
@@ -82,7 +82,7 @@ public class InventoryController {
     }
 
     @PutMapping("/products/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
     public Result<Product> updateProduct(@PathVariable Long id, @RequestBody Product body) {
         Product existing = productMapper.selectById(id);
         if (existing == null) throw new BusinessException("Product not found");
@@ -102,7 +102,7 @@ public class InventoryController {
      * Soft-deletes the product ({@code status=0}). Blocked while on-hand inventory quantity is positive.
      */
     @DeleteMapping("/products/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
     public Result<Void> deleteProduct(@PathVariable Long id) {
         Product existing = productMapper.selectById(id);
         if (existing == null) throw new BusinessException("Product not found");

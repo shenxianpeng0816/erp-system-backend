@@ -26,7 +26,7 @@ public class OutboundController {
     private final SalesOrderMapper orderMapper;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
     public Result<List<OutboundOrder>> list() {
         return Result.success(outboundMapper.selectList(
                 new LambdaQueryWrapper<OutboundOrder>().orderByDesc(OutboundOrder::getCreatedAt)));
@@ -44,7 +44,7 @@ public class OutboundController {
 
     /** Warehouse marks as printed (ready to ship) */
     @PostMapping("/{id}/print")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
     public Result<OutboundOrder> print(@PathVariable Long id) {
         OutboundOrder dn = outboundMapper.selectById(id);
         if (dn == null) throw new BusinessException("Delivery note not found");
@@ -55,7 +55,7 @@ public class OutboundController {
 
     /** Warehouse executes outbound → deduct inventory + write log */
     @PostMapping("/{id}/ship")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
     @Transactional
     public Result<OutboundOrder> ship(@PathVariable Long id) {
         OutboundOrder dn = outboundMapper.selectById(id);
