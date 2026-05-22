@@ -5,13 +5,20 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.erp.common.exception.BusinessException;
 import com.erp.common.result.Result;
 import com.erp.entity.Customer;
+import com.erp.entity.User;
 import com.erp.mapper.CustomerMapper;
+import com.erp.mapper.UserMapper;
 import com.erp.util.SecurityUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/customers")
@@ -19,6 +26,7 @@ import java.util.List;
 public class CustomerController {
 
     private final CustomerMapper customerMapper;
+    private final UserMapper userMapper;
 
     /** Active customers only; SALES scope = own {@code created_by} */
     @GetMapping("/search")
@@ -45,7 +53,9 @@ public class CustomerController {
             q.eq(Customer::getStatus, 1);
         }
         q.orderByDesc(Customer::getStatus).orderByAsc(Customer::getCustomerNo);
-        return Result.success(customerMapper.selectList(q));
+        List<Customer> list = customerMapper.selectList(q);
+        enrichCreatedByUsernames(list);
+        return Result.success(list);
     }
 
     @GetMapping("/{id}")
@@ -122,5 +132,25 @@ public class CustomerController {
                 null,
                 new LambdaUpdateWrapper<Customer>().eq(Customer::getId, id).set(Customer::getStatus, 0));
         return Result.success();
+    }
+
+    private void enrichCreatedByUsernames(List<Customer> list) {
+        if (list == null || list.isEmpty()) return;
+        Set<Long> ids = list.stream()
+                .map(Customer::getCreatedBy)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (ids.isEmpty()) return;
+        List<User> users = userMapper.selectList(
+                new LambdaQueryWrapper<User>().in(User::getId, ids));
+        Map<Long, String> usernames = new HashMap<>();
+        for (User u : users) {
+            usernames.put(u.getId(), u.getUsername());
+        }
+        for (Customer c : list) {
+            if (c.getCreatedBy() != null) {
+                c.setCreatedByUsername(usernames.get(c.getCreatedBy()));
+            }
+        }
     }
 }

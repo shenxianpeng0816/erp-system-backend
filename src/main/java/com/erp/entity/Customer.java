@@ -35,6 +35,10 @@ public class Customer {
     private Integer status;
     private Long createdBy;
 
+    /** Populated on list — login username from {@code user} */
+    @TableField(exist = false)
+    private String createdByUsername;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)
