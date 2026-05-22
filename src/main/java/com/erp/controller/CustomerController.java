@@ -38,15 +38,20 @@ public class CustomerController {
     /**
      * List customers. Default {@code status = 1} only.
      * SALES: only rows they created. ADMIN/FINANCE: all active (FINANCE) or all + deleted with {@code includeDeleted=true} (ADMIN).
+     * Optional {@code createdBy} filters by creator (ignored for SALES — always scoped to self).
      */
     @GetMapping
-    public Result<List<Customer>> list(@RequestParam(required = false) Boolean includeDeleted) {
+    public Result<List<Customer>> list(
+            @RequestParam(required = false) Boolean includeDeleted,
+            @RequestParam(required = false) Long createdBy) {
         LambdaQueryWrapper<Customer> q = new LambdaQueryWrapper<>();
         String role = SecurityUtil.currentRole();
         boolean admin = "ADMIN".equals(role);
 
         if ("SALES".equals(role)) {
             q.eq(Customer::getCreatedBy, SecurityUtil.currentUserId());
+        } else if (createdBy != null) {
+            q.eq(Customer::getCreatedBy, createdBy);
         }
 
         if (!admin || !Boolean.TRUE.equals(includeDeleted)) {
