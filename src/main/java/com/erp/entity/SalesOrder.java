@@ -15,6 +15,8 @@ public class SalesOrder {
     private Long salesUserId;
     private Long shipToCustomerId;
     private Long billToCustomerId;
+    /** KE / UG / TZ — may differ from ship-to customer country */
+    private String countryCode;
 
     @TableField(exist = false)
     private String shipToCustomerName;

@@ -26,6 +26,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class SalesOrderServiceImpl implements SalesOrderService {
 
+    private static final Set<String> ALLOWED_COUNTRY_CODES = Set.of("KE", "UG", "TZ");
+
     private final SalesOrderMapper orderMapper;
     private final SalesOrderItemMapper itemMapper;
     private final ApprovalFlowMapper approvalMapper;
@@ -46,6 +48,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         order.setSalesUserId(SecurityUtil.currentUserId());
         order.setShipToCustomerId(req.getShipToCustomerId());
         order.setBillToCustomerId(req.getBillToCustomerId());
+        order.setCountryCode(normalizeCountryCode(req.getCountryCode()));
         order.setPaymentMethod(req.getPaymentMethod());
         order.setPriceTerm(req.getPriceTerm());
         order.setValidityDays(req.getValidityDays() != null ? req.getValidityDays() : 30);
@@ -368,6 +371,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
         order.setShipToCustomerId(req.getShipToCustomerId());
         order.setBillToCustomerId(req.getBillToCustomerId());
+        order.setCountryCode(normalizeCountryCode(req.getCountryCode()));
         order.setPaymentMethod(req.getPaymentMethod());
         order.setPriceTerm(req.getPriceTerm());
         order.setValidityDays(req.getValidityDays() != null ? req.getValidityDays() : 30);
@@ -413,6 +417,17 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    private static String normalizeCountryCode(String countryCode) {
+        if (countryCode == null || countryCode.isBlank()) {
+            throw new BusinessException("Country code is required");
+        }
+        String cc = countryCode.trim().toUpperCase();
+        if (!ALLOWED_COUNTRY_CODES.contains(cc)) {
+            throw new BusinessException("Invalid country code. Allowed: KE, UG, TZ");
+        }
+        return cc;
+    }
 
     private static String userDisplayName(User u) {
         if (u.getRealName() != null && !u.getRealName().isBlank()) {

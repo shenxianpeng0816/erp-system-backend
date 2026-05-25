@@ -1,6 +1,7 @@
 package com.erp.dto.request;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -15,6 +16,9 @@ public class CreateOrderRequest {
 
     @NotNull(message = "Bill-to customer is required")
     private Long billToCustomerId;
+
+    @NotBlank(message = "Country code is required")
+    private String countryCode;
 
     private String paymentMethod;
     private String priceTerm;
