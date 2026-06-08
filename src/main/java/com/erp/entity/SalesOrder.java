@@ -19,6 +19,8 @@ public class SalesOrder {
     private String countryCode;
 
     @TableField(exist = false)
+    private String salesUserName;
+    @TableField(exist = false)
     private String shipToCustomerName;
     @TableField(exist = false)
     private String billToCustomerName;

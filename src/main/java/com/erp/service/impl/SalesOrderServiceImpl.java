@@ -201,35 +201,50 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         return order;
     }
 
-    /** Fills {@code shipToCustomerName} / {@code billToCustomerName} for list and detail APIs. */
+    /** Fills display names for list and detail APIs (salesperson, ship-to, bill-to). */
     private void enrichCustomerNames(List<SalesOrder> orders) {
         if (orders == null || orders.isEmpty()) {
             return;
         }
-        Set<Long> ids = new HashSet<>();
+        Set<Long> customerIds = new HashSet<>();
+        Set<Long> salesUserIds = new HashSet<>();
         for (SalesOrder o : orders) {
             if (o.getShipToCustomerId() != null) {
-                ids.add(o.getShipToCustomerId());
+                customerIds.add(o.getShipToCustomerId());
             }
             if (o.getBillToCustomerId() != null) {
-                ids.add(o.getBillToCustomerId());
+                customerIds.add(o.getBillToCustomerId());
+            }
+            if (o.getSalesUserId() != null) {
+                salesUserIds.add(o.getSalesUserId());
             }
         }
-        if (ids.isEmpty()) {
-            return;
+        Map<Long, String> customerNames = new HashMap<>();
+        if (!customerIds.isEmpty()) {
+            List<Customer> customers = customerMapper.selectList(
+                    new LambdaQueryWrapper<Customer>().in(Customer::getId, customerIds));
+            for (Customer c : customers) {
+                customerNames.put(c.getId(), c.getName());
+            }
         }
-        List<Customer> customers = customerMapper.selectList(
-                new LambdaQueryWrapper<Customer>().in(Customer::getId, ids));
-        Map<Long, String> names = new HashMap<>();
-        for (Customer c : customers) {
-            names.put(c.getId(), c.getName());
+        Map<Long, String> salesUserNames = new HashMap<>();
+        if (!salesUserIds.isEmpty()) {
+            List<User> users = userMapper.selectBatchIds(salesUserIds);
+            for (User u : users) {
+                if (u != null && u.getId() != null) {
+                    salesUserNames.put(u.getId(), userDisplayName(u));
+                }
+            }
         }
         for (SalesOrder o : orders) {
+            if (o.getSalesUserId() != null) {
+                o.setSalesUserName(salesUserNames.get(o.getSalesUserId()));
+            }
             if (o.getShipToCustomerId() != null) {
-                o.setShipToCustomerName(names.get(o.getShipToCustomerId()));
+                o.setShipToCustomerName(customerNames.get(o.getShipToCustomerId()));
             }
             if (o.getBillToCustomerId() != null) {
-                o.setBillToCustomerName(names.get(o.getBillToCustomerId()));
+                o.setBillToCustomerName(customerNames.get(o.getBillToCustomerId()));
             }
         }
     }
