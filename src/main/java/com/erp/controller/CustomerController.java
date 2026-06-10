@@ -2,6 +2,9 @@ package com.erp.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.erp.common.dto.PageQuery;
+import com.erp.common.dto.PageResult;
 import com.erp.common.exception.BusinessException;
 import com.erp.common.result.Result;
 import com.erp.entity.Customer;
@@ -36,14 +39,32 @@ public class CustomerController {
     }
 
     /**
-     * List customers. Default {@code status = 1} only.
+     * Paginated customer list. Default {@code status = 1} only.
      * SALES: only rows they created. ADMIN/FINANCE: all active (FINANCE) or all + deleted with {@code includeDeleted=true} (ADMIN).
      * Optional {@code createdBy} filters by creator (ignored for SALES — always scoped to self).
      */
     @GetMapping
-    public Result<List<Customer>> list(
+    public Result<PageResult<Customer>> list(
             @RequestParam(required = false) Boolean includeDeleted,
-            @RequestParam(required = false) Long createdBy) {
+            @RequestParam(required = false) Long createdBy,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
+        LambdaQueryWrapper<Customer> q = customerQuery(includeDeleted, createdBy, keyword);
+        Page<Customer> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
+        Page<Customer> result = customerMapper.selectPage(p, q);
+        enrichCreatedByUsernames(result.getRecords());
+        return Result.success(PageQuery.from(result));
+    }
+
+    /** Active customers for order form dropdowns (no pagination). */
+    @GetMapping("/options")
+    public Result<List<Customer>> options() {
+        List<Customer> list = customerMapper.selectList(customerQuery(false, null, null));
+        return Result.success(list);
+    }
+
+    private LambdaQueryWrapper<Customer> customerQuery(Boolean includeDeleted, Long createdBy, String keyword) {
         LambdaQueryWrapper<Customer> q = new LambdaQueryWrapper<>();
         String role = SecurityUtil.currentRole();
         boolean admin = "ADMIN".equals(role);
@@ -57,10 +78,14 @@ public class CustomerController {
         if (!admin || !Boolean.TRUE.equals(includeDeleted)) {
             q.eq(Customer::getStatus, 1);
         }
+
+        if (keyword != null && !keyword.isBlank()) {
+            String kw = keyword.trim();
+            q.and(w -> w.like(Customer::getName, kw).or().like(Customer::getCustomerNo, kw));
+        }
+
         q.orderByDesc(Customer::getStatus).orderByAsc(Customer::getCustomerNo);
-        List<Customer> list = customerMapper.selectList(q);
-        enrichCreatedByUsernames(list);
-        return Result.success(list);
+        return q;
     }
 
     @GetMapping("/{id}")
