@@ -33,10 +33,10 @@ public class UserController {
      * {@code WAREHOUSE} returns WAREHOUSE only.
      */
     @GetMapping("/by-role/{role}")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
+    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE','FINANCE','SALES')")
     public Result<List<User>> listByRole(@PathVariable String role) {
         String r = role == null ? "" : role.trim().toUpperCase();
-        if (!Set.of("INBOUND", "WAREHOUSE").contains(r)) {
+        if (!Set.of("INBOUND", "WAREHOUSE", "SALES").contains(r)) {
             throw new BusinessException("Unsupported role filter");
         }
         LambdaQueryWrapper<User> q = new LambdaQueryWrapper<User>()
@@ -44,6 +44,8 @@ public class UserController {
                 .orderByAsc(User::getRealName);
         if ("INBOUND".equals(r)) {
             q.in(User::getRole, List.of("INBOUND", "WAREHOUSE"));
+        } else if ("SALES".equals(r)) {
+            q.in(User::getRole, List.of("SALES", "ADMIN"));
         } else {
             q.eq(User::getRole, "WAREHOUSE");
         }

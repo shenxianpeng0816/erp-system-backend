@@ -2,6 +2,7 @@ package com.erp.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.erp.common.dto.PageQuery;
 import com.erp.common.dto.PageResult;
 import com.erp.common.result.Result;
 import com.erp.common.exception.BusinessException;
@@ -41,10 +42,9 @@ public class OutboundController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String orderNo,
             @RequestParam(defaultValue = "1") long page,
-            @RequestParam(defaultValue = "20") long size) {
-        if (page < 1) page = 1;
-        if (size < 1) size = 20;
-        if (size > 100) size = 100;
+            @RequestParam(defaultValue = "10") long size) {
+        page = PageQuery.normalizePage(page);
+        size = PageQuery.normalizeSize(size);
 
         LambdaQueryWrapper<OutboundOrder> q = new LambdaQueryWrapper<OutboundOrder>()
                 .orderByDesc(OutboundOrder::getCreatedAt);
@@ -70,13 +70,7 @@ public class OutboundController {
         Page<OutboundOrder> p = new Page<>(page, size);
         Page<OutboundOrder> result = outboundMapper.selectPage(p, q);
         enrichOutboundOrders(result.getRecords());
-
-        PageResult<OutboundOrder> pr = new PageResult<>();
-        pr.setRecords(result.getRecords());
-        pr.setTotal(result.getTotal());
-        pr.setCurrent(result.getCurrent());
-        pr.setSize(result.getSize());
-        return Result.success(pr);
+        return Result.success(PageQuery.from(result));
     }
 
     @GetMapping("/{id}")

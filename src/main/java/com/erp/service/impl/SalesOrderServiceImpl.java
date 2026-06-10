@@ -1,6 +1,9 @@
 package com.erp.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.erp.common.dto.PageQuery;
+import com.erp.common.dto.PageResult;
 import com.erp.common.exception.BusinessException;
 import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CreateOrderRequest;
@@ -16,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -182,10 +186,52 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     }
 
     @Override
+    public PageResult<SalesOrder> pageAllOrders(String keyword, String status, Long salesUserId,
+                                                long page, long size) {
+        LambdaQueryWrapper<SalesOrder> q = new LambdaQueryWrapper<SalesOrder>()
+                .orderByDesc(SalesOrder::getCreatedAt);
+        applyOrderListFilters(q, keyword, status, salesUserId, null);
+        Page<SalesOrder> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
+        Page<SalesOrder> result = orderMapper.selectPage(p, q);
+        enrichCustomerNames(result.getRecords());
+        return PageQuery.from(result);
+    }
+
+    @Override
     public List<SalesOrder> listMyOrders() {
         List<SalesOrder> list = orderMapper.findBySalesUser(SecurityUtil.currentUserId());
         enrichCustomerNames(list);
         return list;
+    }
+
+    @Override
+    public PageResult<SalesOrder> pageMyOrders(String keyword, String status, long page, long size) {
+        LambdaQueryWrapper<SalesOrder> q = new LambdaQueryWrapper<SalesOrder>()
+                .orderByDesc(SalesOrder::getCreatedAt);
+        applyOrderListFilters(q, keyword, status, null, SecurityUtil.currentUserId());
+        Page<SalesOrder> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
+        Page<SalesOrder> result = orderMapper.selectPage(p, q);
+        enrichCustomerNames(result.getRecords());
+        return PageQuery.from(result);
+    }
+
+    private static void applyOrderListFilters(LambdaQueryWrapper<SalesOrder> q,
+                                              String keyword,
+                                              String status,
+                                              Long salesUserId,
+                                              Long ownerUserId) {
+        if (ownerUserId != null) {
+            q.eq(SalesOrder::getSalesUserId, ownerUserId);
+        }
+        if (keyword != null && !keyword.isBlank()) {
+            q.like(SalesOrder::getOrderNo, keyword.trim());
+        }
+        if (status != null && !status.isBlank()) {
+            q.eq(SalesOrder::getStatus, status.trim());
+        }
+        if (salesUserId != null) {
+            q.eq(SalesOrder::getSalesUserId, salesUserId);
+        }
     }
 
     @Override
@@ -494,14 +540,18 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     }
 
     private void generateInvoice(SalesOrder order) {
+        LocalDate issueDate = businessLocalDate(order);
+        int paymentDays = order.getValidityDays() != null && order.getValidityDays() > 0
+                ? order.getValidityDays() : 30;
+
         Invoice invoice = new Invoice();
         invoice.setInvoiceNo(docSequenceService.nextDocNo("INV"));
         invoice.setOrderId(order.getId());
         invoice.setBillToCustomerId(order.getBillToCustomerId());
         invoice.setAmount(order.getTotalAmount());
         invoice.setStatus("PENDING");
-        invoice.setIssueDate(LocalDate.now());
-        invoice.setDueDate(LocalDate.now().plusDays(30));
+        invoice.setIssueDate(issueDate);
+        invoice.setDueDate(issueDate.plusDays(paymentDays));
         invoice.setPaymentMethod(order.getPaymentMethod());
         invoiceMapper.insert(invoice);
 
@@ -515,6 +565,17 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         rec.setDueDate(invoice.getDueDate());
         rec.setStatus("OUTSTANDING");
         receivableMapper.insert(rec);
+    }
+
+    /** Invoice dates follow the sales order country wall clock (KE/UG/TZ), not server default zone. */
+    private static LocalDate businessLocalDate(SalesOrder order) {
+        String cc = order.getCountryCode() != null ? order.getCountryCode().trim().toUpperCase() : "KE";
+        ZoneId zone = switch (cc) {
+            case "UG" -> ZoneId.of("Africa/Kampala");
+            case "TZ" -> ZoneId.of("Africa/Dar_es_Salaam");
+            default -> ZoneId.of("Africa/Nairobi");
+        };
+        return LocalDate.now(zone);
     }
 
     private void generateOutboundOrder(SalesOrder order) {

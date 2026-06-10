@@ -2,6 +2,7 @@ package com.erp.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.erp.common.dto.PageQuery;
 import com.erp.common.dto.PageResult;
 import com.erp.common.exception.BusinessException;
 import com.erp.common.result.Result;
@@ -44,9 +45,11 @@ public class FinanceController {
 
     @GetMapping("/invoices")
     @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
-    public Result<List<Invoice>> invoices(
+    public Result<PageResult<Invoice>> invoices(
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String orderNo) {
+            @RequestParam(required = false) String orderNo,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
         LambdaQueryWrapper<Invoice> q = new LambdaQueryWrapper<Invoice>()
                 .orderByDesc(Invoice::getIssueDate);
         if (status != null) q.eq(Invoice::getStatus, status);
@@ -55,14 +58,20 @@ public class FinanceController {
                     new LambdaQueryWrapper<SalesOrder>()
                             .like(SalesOrder::getOrderNo, orderNo.trim()));
             if (orders.isEmpty()) {
-                return Result.success(List.of());
+                PageResult<Invoice> empty = new PageResult<>();
+                empty.setRecords(List.of());
+                empty.setTotal(0);
+                empty.setCurrent(PageQuery.normalizePage(page));
+                empty.setSize(PageQuery.normalizeSize(size));
+                return Result.success(empty);
             }
             q.in(Invoice::getOrderId,
                     orders.stream().map(SalesOrder::getId).toList());
         }
-        List<Invoice> invoices = invoiceMapper.selectList(q);
-        enrichInvoices(invoices);
-        return Result.success(invoices);
+        Page<Invoice> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
+        Page<Invoice> result = invoiceMapper.selectPage(p, q);
+        enrichInvoices(result.getRecords());
+        return Result.success(PageQuery.from(result));
     }
 
     @GetMapping("/invoices/{id}")
@@ -102,26 +111,32 @@ public class FinanceController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long customerId,
             @RequestParam(defaultValue = "1") long page,
-            @RequestParam(defaultValue = "20") long size) {
-        if (page < 1) page = 1;
-        if (size < 1) size = 20;
-        if (size > 100) size = 100;
+            @RequestParam(defaultValue = "10") long size) {
+        LambdaQueryWrapper<Receivable> q = receivableQuery(status, customerId);
 
+        Page<Receivable> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
+        Page<Receivable> result = receivableMapper.selectPage(p, q);
+        enrichReceivables(result.getRecords());
+        return Result.success(PageQuery.from(result));
+    }
+
+    /** Export all receivables matching list filters (no pagination). */
+    @GetMapping("/receivables/export")
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    public Result<List<Receivable>> exportReceivables(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long customerId) {
+        List<Receivable> recs = receivableMapper.selectList(receivableQuery(status, customerId));
+        enrichReceivables(recs);
+        return Result.success(recs);
+    }
+
+    private LambdaQueryWrapper<Receivable> receivableQuery(String status, Long customerId) {
         LambdaQueryWrapper<Receivable> q = new LambdaQueryWrapper<Receivable>()
                 .orderByAsc(Receivable::getDueDate);
         if (status != null) q.eq(Receivable::getStatus, status);
         if (customerId != null) q.eq(Receivable::getCustomerId, customerId);
-
-        Page<Receivable> p = new Page<>(page, size);
-        Page<Receivable> result = receivableMapper.selectPage(p, q);
-        enrichReceivables(result.getRecords());
-
-        PageResult<Receivable> pr = new PageResult<>();
-        pr.setRecords(result.getRecords());
-        pr.setTotal(result.getTotal());
-        pr.setCurrent(result.getCurrent());
-        pr.setSize(result.getSize());
-        return Result.success(pr);
+        return q;
     }
 
     /** Record a payment against a receivable */

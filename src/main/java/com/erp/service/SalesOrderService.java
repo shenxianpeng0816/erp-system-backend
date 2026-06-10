@@ -1,5 +1,6 @@
 package com.erp.service;
 
+import com.erp.common.dto.PageResult;
 import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CreateOrderRequest;
 import com.erp.entity.ApprovalFlow;
@@ -12,8 +13,10 @@ public interface SalesOrderService {
     SalesOrder submitOrder(Long orderId);
     SalesOrder handleApproval(Long orderId, ApprovalRequest req);
     List<SalesOrder> listMyOrders();
+    PageResult<SalesOrder> pageMyOrders(String keyword, String status, long page, long size);
     List<SalesOrder> listPendingApprovals();
     List<SalesOrder> listAllOrders();
+    PageResult<SalesOrder> pageAllOrders(String keyword, String status, Long salesUserId, long page, long size);
     SalesOrder getDetail(Long orderId);
     /** Ensures the current user may read this order (used for items & approvals). */
     void assertOrderViewable(Long orderId);

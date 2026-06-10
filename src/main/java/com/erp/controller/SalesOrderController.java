@@ -1,5 +1,6 @@
 package com.erp.controller;
 
+import com.erp.common.dto.PageResult;
 import com.erp.common.result.Result;
 import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CreateOrderRequest;
@@ -45,18 +46,27 @@ public class SalesOrderController {
         return Result.success(orderService.handleApproval(id, req));
     }
 
-    /** Sales: my orders */
+    /** Sales: my orders (paginated) */
     @GetMapping("/mine")
     @PreAuthorize("hasAnyRole('SALES','ADMIN')")
-    public Result<List<SalesOrder>> mine() {
-        return Result.success(orderService.listMyOrders());
+    public Result<PageResult<SalesOrder>> mine(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
+        return Result.success(orderService.pageMyOrders(keyword, status, page, size));
     }
 
-    /** Admin + warehouse + inbound: full list. FINANCE uses /finance; SALES uses /orders/mine. */
+    /** Admin + warehouse + inbound: full list (paginated). FINANCE uses /finance; SALES uses /orders/mine. */
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
-    public Result<List<SalesOrder>> all() {
-        return Result.success(orderService.listAllOrders());
+    public Result<PageResult<SalesOrder>> all(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long salesUserId,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
+        return Result.success(orderService.pageAllOrders(keyword, status, salesUserId, page, size));
     }
 
     /** Admin: pending approvals only */

@@ -1,5 +1,6 @@
 package com.erp.entity;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
@@ -17,6 +18,7 @@ public class Receivable {
     private BigDecimal amount;
     private BigDecimal receivedAmount;
     private BigDecimal balance;
+    @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate dueDate;
     private String status; // OUTSTANDING / PARTIAL / SETTLED / OVERDUE
 

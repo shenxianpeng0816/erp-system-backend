@@ -1,6 +1,9 @@
 package com.erp.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.erp.common.dto.PageQuery;
+import com.erp.common.dto.PageResult;
 import com.erp.common.exception.BusinessException;
 import com.erp.common.result.Result;
 import com.erp.entity.*;
@@ -38,11 +41,15 @@ public class InboundController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
-    public Result<List<InboundOrder>> list() {
-        List<InboundOrder> list = inboundMapper.selectList(
-                new LambdaQueryWrapper<InboundOrder>().orderByDesc(InboundOrder::getCreatedAt));
-        enrichOperatorNames(list);
-        return Result.success(list);
+    public Result<PageResult<InboundOrder>> list(
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
+        LambdaQueryWrapper<InboundOrder> q = new LambdaQueryWrapper<InboundOrder>()
+                .orderByDesc(InboundOrder::getCreatedAt);
+        Page<InboundOrder> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
+        Page<InboundOrder> result = inboundMapper.selectPage(p, q);
+        enrichOperatorNames(result.getRecords());
+        return Result.success(PageQuery.from(result));
     }
 
     @GetMapping("/{id}")

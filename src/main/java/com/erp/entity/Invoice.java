@@ -1,5 +1,6 @@
 package com.erp.entity;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
@@ -17,7 +18,9 @@ public class Invoice {
     private Long billToCustomerId;
     private BigDecimal amount;
     private String status; // PENDING / PARTIAL / PAID / CANCELLED
+    @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate issueDate;
+    @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate dueDate;
     private String paymentMethod;
     private String remark;
