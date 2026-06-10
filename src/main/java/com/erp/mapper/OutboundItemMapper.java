@@ -23,4 +23,19 @@ public interface OutboundItemMapper extends BaseMapper<OutboundItem> {
             ORDER BY oi.id
             """)
     List<OutboundItem> findWithProductByOutboundId(@Param("outboundId") Long outboundId);
+
+    @Select("""
+            <script>
+            SELECT oi.id, oi.outbound_id, oi.product_id, oi.qty,
+                   p.name AS product_name, p.product_no, p.spec, p.unit
+            FROM outbound_item oi
+            JOIN product p ON p.id = oi.product_id
+            WHERE oi.outbound_id IN
+            <foreach collection="outboundIds" item="id" open="(" separator="," close=")">
+              #{id}
+            </foreach>
+            ORDER BY oi.outbound_id, oi.id
+            </script>
+            """)
+    List<OutboundItem> findWithProductByOutboundIds(@Param("outboundIds") List<Long> outboundIds);
 }

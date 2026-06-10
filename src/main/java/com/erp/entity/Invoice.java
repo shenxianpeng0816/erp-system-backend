@@ -22,6 +22,9 @@ public class Invoice {
     private String paymentMethod;
     private String remark;
 
+    @TableField(exist = false)
+    private String billToCustomerName;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)

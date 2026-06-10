@@ -18,6 +18,18 @@ public class OutboundOrder {
     private LocalDateTime shippedAt;
     private String remark;
 
+    @TableField(exist = false)
+    private String shipToCustomerName;
+    @TableField(exist = false)
+    private String salesUserName;
+    @TableField(exist = false)
+    private String orderNo;
+    /** e.g. "ABC-100 ×2 / XYZ-200 ×1" */
+    @TableField(exist = false)
+    private String productSummary;
+    @TableField(exist = false)
+    private Integer totalQty;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)

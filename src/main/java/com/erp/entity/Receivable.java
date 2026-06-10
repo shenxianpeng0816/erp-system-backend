@@ -20,6 +20,11 @@ public class Receivable {
     private LocalDate dueDate;
     private String status; // OUTSTANDING / PARTIAL / SETTLED / OVERDUE
 
+    @TableField(exist = false)
+    private String customerName;
+    @TableField(exist = false)
+    private String salesUserName;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)
