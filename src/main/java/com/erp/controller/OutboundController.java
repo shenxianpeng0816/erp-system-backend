@@ -39,6 +39,7 @@ public class OutboundController {
     @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
     public Result<PageResult<OutboundOrder>> list(
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String orderNo,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "20") long size) {
         if (page < 1) page = 1;
@@ -49,6 +50,21 @@ public class OutboundController {
                 .orderByDesc(OutboundOrder::getCreatedAt);
         if (keyword != null && !keyword.isBlank()) {
             q.like(OutboundOrder::getOutboundNo, keyword.trim());
+        }
+        if (orderNo != null && !orderNo.isBlank()) {
+            List<SalesOrder> orders = orderMapper.selectList(
+                    new LambdaQueryWrapper<SalesOrder>()
+                            .likeRight(SalesOrder::getOrderNo, orderNo.trim()));
+            if (orders.isEmpty()) {
+                PageResult<OutboundOrder> empty = new PageResult<>();
+                empty.setRecords(List.of());
+                empty.setTotal(0);
+                empty.setCurrent(page);
+                empty.setSize(size);
+                return Result.success(empty);
+            }
+            q.in(OutboundOrder::getOrderId,
+                    orders.stream().map(SalesOrder::getId).toList());
         }
 
         Page<OutboundOrder> p = new Page<>(page, size);

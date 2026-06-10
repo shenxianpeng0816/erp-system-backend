@@ -24,6 +24,10 @@ public class Product {
     @TableLogic(value = "1", delval = "0")
     private Integer status;
 
+    /** Populated from inventory — not persisted on product table */
+    @TableField(exist = false)
+    private Integer stockQty;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)

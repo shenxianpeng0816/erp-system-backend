@@ -25,6 +25,12 @@ public class Invoice {
     @TableField(exist = false)
     private String billToCustomerName;
 
+    @TableField(exist = false)
+    private String orderNo;
+
+    @TableField(exist = false)
+    private String salesUserName;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)

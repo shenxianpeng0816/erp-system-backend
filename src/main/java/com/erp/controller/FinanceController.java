@@ -45,10 +45,21 @@ public class FinanceController {
     @GetMapping("/invoices")
     @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
     public Result<List<Invoice>> invoices(
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String orderNo) {
         LambdaQueryWrapper<Invoice> q = new LambdaQueryWrapper<Invoice>()
                 .orderByDesc(Invoice::getIssueDate);
         if (status != null) q.eq(Invoice::getStatus, status);
+        if (orderNo != null && !orderNo.isBlank()) {
+            List<SalesOrder> orders = salesOrderMapper.selectList(
+                    new LambdaQueryWrapper<SalesOrder>()
+                            .like(SalesOrder::getOrderNo, orderNo.trim()));
+            if (orders.isEmpty()) {
+                return Result.success(List.of());
+            }
+            q.in(Invoice::getOrderId,
+                    orders.stream().map(SalesOrder::getId).toList());
+        }
         List<Invoice> invoices = invoiceMapper.selectList(q);
         enrichInvoices(invoices);
         return Result.success(invoices);
@@ -147,9 +158,13 @@ public class FinanceController {
             return;
         }
         Set<Long> customerIds = new HashSet<>();
+        Set<Long> orderIds = new HashSet<>();
         for (Invoice inv : invoices) {
             if (inv.getBillToCustomerId() != null) {
                 customerIds.add(inv.getBillToCustomerId());
+            }
+            if (inv.getOrderId() != null) {
+                orderIds.add(inv.getOrderId());
             }
         }
         Map<Long, String> customerNames = new HashMap<>();
@@ -160,9 +175,39 @@ public class FinanceController {
                 customerNames.put(c.getId(), c.getName());
             }
         }
+        Map<Long, SalesOrder> orderMap = new HashMap<>();
+        Set<Long> salesUserIds = new HashSet<>();
+        if (!orderIds.isEmpty()) {
+            List<SalesOrder> orders = salesOrderMapper.selectList(
+                    new LambdaQueryWrapper<SalesOrder>().in(SalesOrder::getId, orderIds));
+            for (SalesOrder order : orders) {
+                orderMap.put(order.getId(), order);
+                if (order.getSalesUserId() != null) {
+                    salesUserIds.add(order.getSalesUserId());
+                }
+            }
+        }
+        Map<Long, String> salesUserNames = new HashMap<>();
+        if (!salesUserIds.isEmpty()) {
+            List<User> users = userMapper.selectBatchIds(salesUserIds);
+            for (User u : users) {
+                if (u != null && u.getId() != null) {
+                    salesUserNames.put(u.getId(), userDisplayName(u));
+                }
+            }
+        }
         for (Invoice inv : invoices) {
             if (inv.getBillToCustomerId() != null) {
                 inv.setBillToCustomerName(customerNames.get(inv.getBillToCustomerId()));
+            }
+            if (inv.getOrderId() != null) {
+                SalesOrder order = orderMap.get(inv.getOrderId());
+                if (order != null) {
+                    inv.setOrderNo(order.getOrderNo());
+                    if (order.getSalesUserId() != null) {
+                        inv.setSalesUserName(salesUserNames.get(order.getSalesUserId()));
+                    }
+                }
             }
         }
     }

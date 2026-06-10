@@ -13,7 +13,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/inventory")
@@ -69,8 +71,26 @@ public class InventoryController {
 
     @GetMapping("/products")
     public Result<List<Product>> products() {
-        return Result.success(productMapper.selectList(
-                new LambdaQueryWrapper<Product>().eq(Product::getStatus, 1)));
+        List<Product> products = productMapper.selectList(
+                new LambdaQueryWrapper<Product>().eq(Product::getStatus, 1));
+        enrichProductStock(products);
+        return Result.success(products);
+    }
+
+    private void enrichProductStock(List<Product> products) {
+        if (products == null || products.isEmpty()) {
+            return;
+        }
+        List<Long> productIds = products.stream().map(Product::getId).toList();
+        List<Inventory> inventories = inventoryMapper.selectList(
+                new LambdaQueryWrapper<Inventory>().in(Inventory::getProductId, productIds));
+        Map<Long, Integer> qtyByProduct = new HashMap<>();
+        for (Inventory inv : inventories) {
+            qtyByProduct.put(inv.getProductId(), inv.getQty() != null ? inv.getQty() : 0);
+        }
+        for (Product p : products) {
+            p.setStockQty(qtyByProduct.getOrDefault(p.getId(), 0));
+        }
     }
 
     @PostMapping("/products")

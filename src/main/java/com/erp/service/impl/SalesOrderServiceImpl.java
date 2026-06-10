@@ -39,6 +39,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final DocSequenceService docSequenceService;
     private final UserMapper userMapper;
     private final CustomerMapper customerMapper;
+    private final ProductMapper productMapper;
 
     @Override
     @Transactional
@@ -71,6 +72,8 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         }
 
         order.setStatus("DRAFT");
+
+        validateOrderItemsStock(req.getItems());
 
         BigDecimal total = BigDecimal.ZERO;
         orderMapper.insert(order);
@@ -411,6 +414,8 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         itemMapper.delete(
                 new LambdaQueryWrapper<SalesOrderItem>().eq(SalesOrderItem::getOrderId, orderId));
 
+        validateOrderItemsStock(req.getItems());
+
         BigDecimal total = BigDecimal.ZERO;
         for (CreateOrderRequest.OrderItemRequest i : req.getItems()) {
             SalesOrderItem item = new SalesOrderItem();
@@ -432,6 +437,35 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    private void validateOrderItemsStock(List<CreateOrderRequest.OrderItemRequest> items) {
+        if (items == null || items.isEmpty()) {
+            throw new BusinessException("Order must contain at least one line item");
+        }
+        for (CreateOrderRequest.OrderItemRequest i : items) {
+            if (i.getProductId() == null) {
+                throw new BusinessException("Each line item must have a product");
+            }
+            if (i.getQty() == null || i.getQty() < 1) {
+                throw new BusinessException("Each line item must have quantity at least 1");
+            }
+            Product product = productMapper.selectById(i.getProductId());
+            String productLabel = product != null
+                    ? product.getProductNo() + " — " + product.getName()
+                    : "Product #" + i.getProductId();
+
+            Inventory inv = inventoryMapper.selectOne(
+                    new LambdaQueryWrapper<Inventory>().eq(Inventory::getProductId, i.getProductId()));
+            int available = inv != null && inv.getQty() != null ? inv.getQty() : 0;
+            if (available <= 0) {
+                throw new BusinessException("No available stock for " + productLabel);
+            }
+            if (i.getQty() > available) {
+                throw new BusinessException(
+                        "Insufficient stock for " + productLabel + ". Available: " + available);
+            }
+        }
+    }
 
     private static String normalizeCountryCode(String countryCode) {
         if (countryCode == null || countryCode.isBlank()) {
