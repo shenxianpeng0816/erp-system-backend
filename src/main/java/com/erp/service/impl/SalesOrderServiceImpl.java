@@ -6,6 +6,7 @@ import com.erp.common.dto.PageQuery;
 import com.erp.common.dto.PageResult;
 import com.erp.common.exception.BusinessException;
 import com.erp.dto.request.ApprovalRequest;
+import com.erp.dto.request.CancelOrderRequest;
 import com.erp.dto.request.CreateOrderRequest;
 import com.erp.entity.*;
 import com.erp.mapper.*;
@@ -39,6 +40,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final OutboundOrderMapper outboundMapper;
     private final OutboundItemMapper outboundItemMapper;
     private final InventoryMapper inventoryMapper;
+    private final InventoryLogMapper inventoryLogMapper;
     private final ReceivableMapper receivableMapper;
     private final DocSequenceService docSequenceService;
     private final UserMapper userMapper;
@@ -480,6 +482,123 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         orderMapper.updateById(order);
         enrichCustomerNames(List.of(order));
         return order;
+    }
+
+    @Override
+    @Transactional
+    public SalesOrder cancelOrder(Long orderId, CancelOrderRequest req) {
+        SalesOrder order = orderMapper.selectById(orderId);
+        if (order == null) throw new BusinessException("Order not found");
+
+        String role = SecurityUtil.currentRole();
+        Long uid = SecurityUtil.currentUserId();
+        if ("ADMIN".equals(role)) {
+            // allowed
+        } else if ("SALES".equals(role) && order.getSalesUserId().equals(uid)) {
+            // allowed
+        } else {
+            throw new BusinessException("Access denied");
+        }
+
+        String status = order.getStatus();
+        if ("CANCELLED".equals(status)) {
+            throw new BusinessException("Order is already cancelled");
+        }
+        if (!"APPROVED".equals(status) && !"SHIPPED".equals(status)) {
+            throw new BusinessException("Only approved or shipped orders can be cancelled");
+        }
+
+        assertNoPaymentsReceived(orderId);
+
+        List<OutboundOrder> outbounds = outboundMapper.selectList(
+                new LambdaQueryWrapper<OutboundOrder>().eq(OutboundOrder::getOrderId, orderId));
+        for (OutboundOrder dn : outbounds) {
+            if ("CANCELLED".equals(dn.getStatus())) continue;
+            if ("SHIPPED".equals(dn.getStatus())) {
+                restoreInventoryForOutbound(dn);
+            } else if (!"PENDING".equals(dn.getStatus()) && !"PRINTED".equals(dn.getStatus())) {
+                throw new BusinessException("Cannot cancel order: outbound " + dn.getOutboundNo()
+                        + " is in status " + dn.getStatus());
+            }
+            dn.setStatus("CANCELLED");
+            outboundMapper.updateById(dn);
+        }
+
+        List<Invoice> invoices = invoiceMapper.selectList(
+                new LambdaQueryWrapper<Invoice>().eq(Invoice::getOrderId, orderId));
+        for (Invoice inv : invoices) {
+            if ("CANCELLED".equals(inv.getStatus())) continue;
+            inv.setStatus("CANCELLED");
+            invoiceMapper.updateById(inv);
+
+            List<Receivable> recs = receivableMapper.selectList(
+                    new LambdaQueryWrapper<Receivable>().eq(Receivable::getInvoiceId, inv.getId()));
+            for (Receivable rec : recs) {
+                if ("CANCELLED".equals(rec.getStatus())) continue;
+                rec.setStatus("CANCELLED");
+                rec.setBalance(BigDecimal.ZERO);
+                receivableMapper.updateById(rec);
+            }
+        }
+
+        order.setStatus("CANCELLED");
+        String reason = req != null && req.getReason() != null ? req.getReason().trim() : "";
+        if (!reason.isEmpty()) {
+            String prefix = order.getRemark() != null && !order.getRemark().isBlank()
+                    ? order.getRemark().trim() + "\n" : "";
+            order.setRemark(prefix + "Cancelled: " + reason);
+        }
+        orderMapper.updateById(order);
+        enrichCustomerNames(List.of(order));
+        return order;
+    }
+
+    private void assertNoPaymentsReceived(Long orderId) {
+        List<Invoice> invoices = invoiceMapper.selectList(
+                new LambdaQueryWrapper<Invoice>().eq(Invoice::getOrderId, orderId));
+        for (Invoice inv : invoices) {
+            if ("PAID".equals(inv.getStatus()) || "PARTIAL".equals(inv.getStatus())) {
+                throw new BusinessException("Cannot cancel: invoice " + inv.getInvoiceNo() + " has payments recorded");
+            }
+            List<Receivable> recs = receivableMapper.selectList(
+                    new LambdaQueryWrapper<Receivable>().eq(Receivable::getInvoiceId, inv.getId()));
+            for (Receivable rec : recs) {
+                if (rec.getReceivedAmount() != null
+                        && rec.getReceivedAmount().compareTo(BigDecimal.ZERO) > 0) {
+                    throw new BusinessException("Cannot cancel: receivable has received payments");
+                }
+            }
+        }
+    }
+
+    private void restoreInventoryForOutbound(OutboundOrder dn) {
+        Long operatorId = SecurityUtil.currentUserId();
+        List<OutboundItem> items = outboundItemMapper.selectList(
+                new LambdaQueryWrapper<OutboundItem>().eq(OutboundItem::getOutboundId, dn.getId()));
+        for (OutboundItem item : items) {
+            Inventory inv = inventoryMapper.selectOne(
+                    new LambdaQueryWrapper<Inventory>().eq(Inventory::getProductId, item.getProductId()));
+            if (inv == null) {
+                inv = new Inventory();
+                inv.setProductId(item.getProductId());
+                inv.setQty(item.getQty());
+                inventoryMapper.insert(inv);
+            } else {
+                inv.setQty(inv.getQty() + item.getQty());
+                inventoryMapper.updateById(inv);
+            }
+
+            InventoryLog log = new InventoryLog();
+            log.setProductId(item.getProductId());
+            log.setType("ADJUST");
+            log.setQtyChange(item.getQty());
+            log.setQtyAfter(inv.getQty());
+            log.setRefId(dn.getId());
+            log.setRefType("ORDER_CANCEL");
+            log.setOperatorId(operatorId);
+            log.setRemark("Order cancel restore: " + dn.getOutboundNo());
+            inventoryLogMapper.insert(log);
+        }
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────

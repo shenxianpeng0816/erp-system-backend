@@ -93,7 +93,7 @@ public class FinanceController {
         if (status != null) {
             q.eq(Receivable::getStatus, status);
         } else {
-            q.ne(Receivable::getStatus, "SETTLED");
+            q.notIn(Receivable::getStatus, "SETTLED", "CANCELLED");
         }
         List<Receivable> recs = receivableMapper.selectList(q);
         BigDecimal total = recs.stream()
@@ -147,7 +147,13 @@ public class FinanceController {
                                             @RequestBody PaymentRequest req) {
         Receivable rec = receivableMapper.selectById(id);
         if (rec == null) throw new BusinessException("Receivable not found");
+        if ("CANCELLED".equals(rec.getStatus())) throw new BusinessException("Receivable is cancelled");
         if ("SETTLED".equals(rec.getStatus())) throw new BusinessException("Already settled");
+
+        Invoice invCheck = invoiceMapper.selectById(rec.getInvoiceId());
+        if (invCheck != null && "CANCELLED".equals(invCheck.getStatus())) {
+            throw new BusinessException("Invoice is cancelled");
+        }
 
         BigDecimal newReceived = rec.getReceivedAmount().add(req.getAmount());
         if (newReceived.compareTo(rec.getAmount()) > 0)

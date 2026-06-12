@@ -2,6 +2,7 @@ package com.erp.service;
 
 import com.erp.common.dto.PageResult;
 import com.erp.dto.request.ApprovalRequest;
+import com.erp.dto.request.CancelOrderRequest;
 import com.erp.dto.request.CreateOrderRequest;
 import com.erp.entity.ApprovalFlow;
 import com.erp.entity.SalesOrder;
@@ -28,4 +29,7 @@ public interface SalesOrderService {
 
     /** Rewrites header + line items while status is {@code DRAFT} or {@code PENDING_APPROVAL}. Admin or order owner. */
     SalesOrder updatePendingOrder(Long orderId, CreateOrderRequest req);
+
+    /** Cancel an approved/shipped order, void linked docs, restore inventory when shipped. */
+    SalesOrder cancelOrder(Long orderId, CancelOrderRequest req);
 }

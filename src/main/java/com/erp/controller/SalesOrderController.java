@@ -3,6 +3,7 @@ package com.erp.controller;
 import com.erp.common.dto.PageResult;
 import com.erp.common.result.Result;
 import com.erp.dto.request.ApprovalRequest;
+import com.erp.dto.request.CancelOrderRequest;
 import com.erp.dto.request.CreateOrderRequest;
 import com.erp.entity.ApprovalFlow;
 import com.erp.entity.SalesOrder;
@@ -109,6 +110,14 @@ public class SalesOrderController {
     public Result<SalesOrder> update(@PathVariable Long id,
                                      @Valid @RequestBody CreateOrderRequest req) {
         return Result.success(orderService.updatePendingOrder(id, req));
+    }
+
+    /** Admin or sales owner: cancel approved/shipped order and void linked documents */
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyRole('ADMIN')")
+    public Result<SalesOrder> cancel(@PathVariable Long id,
+                                     @RequestBody(required = false) CancelOrderRequest req) {
+        return Result.success(orderService.cancelOrder(id, req));
     }
 
     /** Admin only (same as order approval): delete draft / pending / rejected orders */

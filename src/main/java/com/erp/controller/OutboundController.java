@@ -108,6 +108,11 @@ public class OutboundController {
         if (!"PRINTED".equals(dn.getStatus()) && !"PENDING".equals(dn.getStatus()))
             throw new BusinessException("Invalid status for shipping");
 
+        SalesOrder linkedOrder = orderMapper.selectById(dn.getOrderId());
+        if (linkedOrder != null && "CANCELLED".equals(linkedOrder.getStatus())) {
+            throw new BusinessException("Sales order is cancelled");
+        }
+
         Long operatorId = SecurityUtil.currentUserId();
 
         List<OutboundItem> items = outboundItemMapper.selectList(

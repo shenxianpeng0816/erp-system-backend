@@ -20,7 +20,7 @@ public class Receivable {
     private BigDecimal balance;
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate dueDate;
-    private String status; // OUTSTANDING / PARTIAL / SETTLED / OVERDUE
+    private String status; // OUTSTANDING / PARTIAL / SETTLED / OVERDUE / CANCELLED
 
     @TableField(exist = false)
     private String customerName;
