@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS `user` (
     `created_at`    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_username` (`username`)
+    UNIQUE KEY `uk_username` (`username`),
+    KEY `idx_real_name` (`real_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='System Users';
 
 -- Default admin (password: Admin@123)
@@ -137,6 +138,7 @@ CREATE TABLE IF NOT EXISTS `sales_order` (
     `updated_at`          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_order_no` (`order_no`),
+    KEY `idx_sales_user_id` (`sales_user_id`),
     CONSTRAINT `fk_order_sales_user`      FOREIGN KEY (`sales_user_id`)       REFERENCES `user` (`id`),
     CONSTRAINT `fk_order_ship_to`         FOREIGN KEY (`ship_to_customer_id`) REFERENCES `customer` (`id`),
     CONSTRAINT `fk_order_bill_to`         FOREIGN KEY (`bill_to_customer_id`) REFERENCES `customer` (`id`),
@@ -196,6 +198,7 @@ CREATE TABLE IF NOT EXISTS `invoice` (
     `updated_at`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_invoice_no` (`invoice_no`),
+    KEY `idx_order_id` (`order_id`),
     CONSTRAINT `fk_invoice_order`    FOREIGN KEY (`order_id`)            REFERENCES `sales_order` (`id`),
     CONSTRAINT `fk_invoice_customer` FOREIGN KEY (`bill_to_customer_id`) REFERENCES `customer` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Invoices';
@@ -215,6 +218,10 @@ CREATE TABLE IF NOT EXISTS `receivable` (
     `created_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
+    KEY `idx_created_at` (`created_at`),
+    KEY `idx_status_created` (`status`, `created_at`),
+    KEY `idx_customer_id` (`customer_id`),
+    KEY `idx_invoice_id` (`invoice_id`),
     CONSTRAINT `fk_recv_invoice`  FOREIGN KEY (`invoice_id`)  REFERENCES `invoice` (`id`),
     CONSTRAINT `fk_recv_customer` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Accounts Receivable';

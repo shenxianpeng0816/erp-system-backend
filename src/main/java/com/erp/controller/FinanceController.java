@@ -6,6 +6,8 @@ import com.erp.common.dto.PageQuery;
 import com.erp.common.dto.PageResult;
 import com.erp.common.exception.BusinessException;
 import com.erp.common.result.Result;
+import com.erp.dto.query.ReceivableFilterParams;
+import com.erp.dto.query.ReceivableSummaryAgg;
 import com.erp.entity.Customer;
 import com.erp.entity.Invoice;
 import com.erp.entity.Receivable;
@@ -93,20 +95,20 @@ public class FinanceController {
     @GetMapping("/receivables/summary")
     @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
     public Result<ReceivableSummary> receivablesSummary(
-            @RequestParam(required = false) String status) {
-        LambdaQueryWrapper<Receivable> q = new LambdaQueryWrapper<>();
-        if (status != null) {
-            q.eq(Receivable::getStatus, status);
-        } else {
-            q.notIn(Receivable::getStatus, "SETTLED", "CANCELLED");
-        }
-        List<Receivable> recs = receivableMapper.selectList(q);
-        BigDecimal total = recs.stream()
-                .map(Receivable::getBalance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long customerId,
+            @RequestParam(required = false) LocalDate createdFrom,
+            @RequestParam(required = false) LocalDate createdTo,
+            @RequestParam(required = false) String customerName,
+            @RequestParam(required = false) String salesUserName) {
+        ReceivableFilterParams params = toFilterParams(
+                status, customerId, createdFrom, createdTo, customerName, salesUserName,
+                status == null);
+        ReceivableSummaryAgg agg = receivableMapper.summarizeReceivables(params);
         ReceivableSummary summary = new ReceivableSummary();
-        summary.setTotalOutstanding(total);
-        summary.setCount(recs.size());
+        summary.setTotalOutstanding(
+                agg.getTotalOutstanding() != null ? agg.getTotalOutstanding() : BigDecimal.ZERO);
+        summary.setCount(agg.getRecordCount() != null ? agg.getRecordCount().intValue() : 0);
         return Result.success(summary);
     }
 
@@ -115,9 +117,14 @@ public class FinanceController {
     public Result<PageResult<Receivable>> receivables(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long customerId,
+            @RequestParam(required = false) LocalDate createdFrom,
+            @RequestParam(required = false) LocalDate createdTo,
+            @RequestParam(required = false) String customerName,
+            @RequestParam(required = false) String salesUserName,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size) {
-        LambdaQueryWrapper<Receivable> q = receivableQuery(status, customerId);
+        LambdaQueryWrapper<Receivable> q = receivableQuery(
+                status, customerId, createdFrom, createdTo, customerName, salesUserName);
 
         Page<Receivable> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
         Page<Receivable> result = receivableMapper.selectPage(p, q);
@@ -130,18 +137,96 @@ public class FinanceController {
     @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
     public Result<List<Receivable>> exportReceivables(
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) Long customerId) {
-        List<Receivable> recs = receivableMapper.selectList(receivableQuery(status, customerId));
+            @RequestParam(required = false) Long customerId,
+            @RequestParam(required = false) LocalDate createdFrom,
+            @RequestParam(required = false) LocalDate createdTo,
+            @RequestParam(required = false) String customerName,
+            @RequestParam(required = false) String salesUserName) {
+        List<Receivable> recs = receivableMapper.selectList(receivableQuery(
+                status, customerId, createdFrom, createdTo, customerName, salesUserName));
         enrichReceivables(recs);
         return Result.success(recs);
     }
 
-    private LambdaQueryWrapper<Receivable> receivableQuery(String status, Long customerId) {
+    private LambdaQueryWrapper<Receivable> receivableQuery(
+            String status,
+            Long customerId,
+            LocalDate createdFrom,
+            LocalDate createdTo,
+            String customerName,
+            String salesUserName) {
+        ReceivableFilterParams params = toFilterParams(
+                status, customerId, createdFrom, createdTo, customerName, salesUserName, null);
         LambdaQueryWrapper<Receivable> q = new LambdaQueryWrapper<Receivable>()
-                .orderByAsc(Receivable::getDueDate);
-        if (status != null) q.eq(Receivable::getStatus, status);
-        if (customerId != null) q.eq(Receivable::getCustomerId, customerId);
+                .orderByDesc(Receivable::getCreatedAt);
+        applyReceivableFilters(q, params);
         return q;
+    }
+
+    private ReceivableFilterParams toFilterParams(
+            String status,
+            Long customerId,
+            LocalDate createdFrom,
+            LocalDate createdTo,
+            String customerName,
+            String salesUserName,
+            Boolean excludeSettledAndCancelled) {
+        ReceivableFilterParams params = new ReceivableFilterParams();
+        params.setStatus(status);
+        params.setCustomerId(customerId);
+        if (createdFrom != null) {
+            params.setCreatedFrom(createdFrom.atStartOfDay());
+        }
+        if (createdTo != null) {
+            params.setCreatedToExclusive(createdTo.plusDays(1).atStartOfDay());
+        }
+        if (customerName != null && !customerName.isBlank()) {
+            params.setCustomerName(customerName.trim());
+        }
+        if (salesUserName != null && !salesUserName.isBlank()) {
+            params.setSalesUserName(salesUserName.trim());
+        }
+        params.setExcludeSettledAndCancelled(excludeSettledAndCancelled);
+        return params;
+    }
+
+    private void applyReceivableFilters(LambdaQueryWrapper<Receivable> q, ReceivableFilterParams params) {
+        if (params.getStatus() != null) {
+            q.eq(Receivable::getStatus, params.getStatus());
+        }
+        if (Boolean.TRUE.equals(params.getExcludeSettledAndCancelled())) {
+            q.notIn(Receivable::getStatus, "SETTLED", "CANCELLED");
+        }
+        if (params.getCustomerId() != null) {
+            q.eq(Receivable::getCustomerId, params.getCustomerId());
+        }
+        if (params.getCreatedFrom() != null) {
+            q.ge(Receivable::getCreatedAt, params.getCreatedFrom());
+        }
+        if (params.getCreatedToExclusive() != null) {
+            q.lt(Receivable::getCreatedAt, params.getCreatedToExclusive());
+        }
+        if (params.getCustomerName() != null) {
+            q.apply("""
+                    EXISTS (
+                        SELECT 1 FROM customer c
+                        WHERE c.id = receivable.customer_id
+                          AND c.name LIKE {0}
+                    )
+                    """, params.getCustomerName() + "%");
+        }
+        if (params.getSalesUserName() != null) {
+            String prefix = params.getSalesUserName() + "%";
+            q.apply("""
+                    EXISTS (
+                        SELECT 1 FROM invoice i
+                        INNER JOIN sales_order o ON o.id = i.order_id
+                        INNER JOIN user u ON u.id = o.sales_user_id
+                        WHERE i.id = receivable.invoice_id
+                          AND (u.real_name LIKE {0} OR u.username LIKE {0})
+                    )
+                    """, prefix, prefix);
+        }
     }
 
     /** Record a payment against a receivable */
