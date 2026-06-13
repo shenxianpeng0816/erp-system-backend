@@ -26,6 +26,8 @@ public class Receivable {
     private String customerName;
     @TableField(exist = false)
     private String salesUserName;
+    @TableField(exist = false)
+    private String productName;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

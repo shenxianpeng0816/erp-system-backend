@@ -10,10 +10,12 @@ import com.erp.entity.Customer;
 import com.erp.entity.Invoice;
 import com.erp.entity.Receivable;
 import com.erp.entity.SalesOrder;
+import com.erp.entity.SalesOrderItem;
 import com.erp.entity.User;
 import com.erp.mapper.CustomerMapper;
 import com.erp.mapper.InvoiceMapper;
 import com.erp.mapper.ReceivableMapper;
+import com.erp.mapper.SalesOrderItemMapper;
 import com.erp.mapper.SalesOrderMapper;
 import com.erp.mapper.UserMapper;
 import lombok.Data;
@@ -24,11 +26,13 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/finance")
@@ -39,6 +43,7 @@ public class FinanceController {
     private final ReceivableMapper receivableMapper;
     private final CustomerMapper customerMapper;
     private final SalesOrderMapper salesOrderMapper;
+    private final SalesOrderItemMapper salesOrderItemMapper;
     private final UserMapper userMapper;
 
     // ── Invoices ─────────────────────────────────────────────────────────────
@@ -292,6 +297,14 @@ public class FinanceController {
             }
         }
 
+        Map<Long, List<SalesOrderItem>> itemsByOrderId = new HashMap<>();
+        if (!orderIds.isEmpty()) {
+            List<SalesOrderItem> items = salesOrderItemMapper.findWithProductByOrderIds(new ArrayList<>(orderIds));
+            for (SalesOrderItem item : items) {
+                itemsByOrderId.computeIfAbsent(item.getOrderId(), k -> new ArrayList<>()).add(item);
+            }
+        }
+
         for (Receivable rec : recs) {
             if (rec.getCustomerId() != null) {
                 rec.setCustomerName(customerNames.get(rec.getCustomerId()));
@@ -302,8 +315,23 @@ public class FinanceController {
                 if (salesUserId != null) {
                     rec.setSalesUserName(salesUserNames.get(salesUserId));
                 }
+                rec.setProductName(formatProductNameSummary(itemsByOrderId.getOrDefault(orderId, List.of())));
             }
         }
+    }
+
+    private static String formatProductNameSummary(List<SalesOrderItem> items) {
+        if (items == null || items.isEmpty()) {
+            return "";
+        }
+        return items.stream()
+                .map(item -> {
+                    String name = item.getProductName() != null && !item.getProductName().isBlank()
+                            ? item.getProductName().trim()
+                            : "Product #" + item.getProductId();
+                    return name + " ×" + item.getQty();
+                })
+                .collect(Collectors.joining(" / "));
     }
 
     private static String userDisplayName(User u) {

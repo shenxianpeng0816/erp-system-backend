@@ -24,4 +24,20 @@ public interface SalesOrderItemMapper extends BaseMapper<SalesOrderItem> {
             ORDER BY soi.id
             """)
     List<SalesOrderItem> findWithProductByOrderId(@Param("orderId") Long orderId);
+
+    @Select("""
+            <script>
+            SELECT soi.id, soi.order_id, soi.product_id, soi.qty,
+                   soi.unit_price, soi.total, soi.remark,
+                   p.name AS product_name, p.product_no, p.spec, p.unit
+            FROM sales_order_item soi
+            JOIN product p ON p.id = soi.product_id
+            WHERE soi.order_id IN
+            <foreach collection="orderIds" item="id" open="(" separator="," close=")">
+              #{id}
+            </foreach>
+            ORDER BY soi.order_id, soi.id
+            </script>
+            """)
+    List<SalesOrderItem> findWithProductByOrderIds(@Param("orderIds") List<Long> orderIds);
 }
