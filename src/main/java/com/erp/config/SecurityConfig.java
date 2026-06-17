@@ -2,9 +2,12 @@ package com.erp.config;
 
 import com.erp.mapper.UserMapper;
 import com.erp.util.JwtUtil;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -31,6 +34,7 @@ public class SecurityConfig {
 
     private final JwtUtil jwtUtil;
     private final UserMapper userMapper;
+    private final ObjectMapper objectMapper;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -67,8 +71,22 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
                 .anyRequest().authenticated()
             )
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint((request, response, authException) ->
+                        writeJsonError(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized"))
+                .accessDeniedHandler((request, response, accessDeniedException) ->
+                        writeJsonError(response, HttpServletResponse.SC_FORBIDDEN, "Access denied"))
+            )
             .addFilterBefore(jwtAuthFilter(), UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    private void writeJsonError(HttpServletResponse response, int status, String message) throws java.io.IOException {
+        response.setStatus(status);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write(objectMapper.writeValueAsString(
+                com.erp.common.result.Result.fail(status, message)));
     }
 
     @Bean
