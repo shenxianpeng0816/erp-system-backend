@@ -310,7 +310,7 @@ public class FinanceController {
         payment.setPaymentMethod(paymentMethod);
         payment.setTransactionRef(transactionRef);
         payment.setPaidAt(req.getPaidAt() != null ? req.getPaidAt() : LocalDate.now());
-        payment.setRemark(req.getRemark());
+        payment.setRemark(req.getRemark() != null && !req.getRemark().isBlank() ? req.getRemark().trim() : null);
         payment.setCreatedBy(SecurityUtil.currentUserId());
         paymentRecordMapper.insert(payment);
 
