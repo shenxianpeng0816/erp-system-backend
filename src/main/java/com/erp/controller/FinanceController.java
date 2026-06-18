@@ -10,16 +10,17 @@ import com.erp.dto.query.ReceivableFilterParams;
 import com.erp.dto.query.ReceivableSummaryAgg;
 import com.erp.entity.Customer;
 import com.erp.entity.Invoice;
+import com.erp.entity.PaymentRecord;
 import com.erp.entity.Receivable;
 import com.erp.entity.SalesOrder;
-import com.erp.entity.SalesOrderItem;
 import com.erp.entity.User;
 import com.erp.mapper.CustomerMapper;
 import com.erp.mapper.InvoiceMapper;
+import com.erp.mapper.PaymentRecordMapper;
 import com.erp.mapper.ReceivableMapper;
-import com.erp.mapper.SalesOrderItemMapper;
 import com.erp.mapper.SalesOrderMapper;
 import com.erp.mapper.UserMapper;
+import com.erp.util.SecurityUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -28,13 +29,11 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/finance")
@@ -43,9 +42,9 @@ public class FinanceController {
 
     private final InvoiceMapper invoiceMapper;
     private final ReceivableMapper receivableMapper;
+    private final PaymentRecordMapper paymentRecordMapper;
     private final CustomerMapper customerMapper;
     private final SalesOrderMapper salesOrderMapper;
-    private final SalesOrderItemMapper salesOrderItemMapper;
     private final UserMapper userMapper;
 
     // ── Invoices ─────────────────────────────────────────────────────────────
@@ -101,9 +100,10 @@ public class FinanceController {
             @RequestParam(required = false) LocalDate createdTo,
             @RequestParam(required = false) String customerName,
             @RequestParam(required = false) String salesUserName,
-            @RequestParam(required = false) String productName) {
+            @RequestParam(required = false) String productName,
+            @RequestParam(required = false) String orderNo) {
         ReceivableFilterParams params = toFilterParams(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName,
+                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName, orderNo,
                 status == null);
         ReceivableSummaryAgg agg = receivableMapper.summarizeReceivables(params);
         ReceivableSummary summary = new ReceivableSummary();
@@ -123,10 +123,11 @@ public class FinanceController {
             @RequestParam(required = false) String customerName,
             @RequestParam(required = false) String salesUserName,
             @RequestParam(required = false) String productName,
+            @RequestParam(required = false) String orderNo,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size) {
         LambdaQueryWrapper<Receivable> q = receivableQuery(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName);
+                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName, orderNo);
 
         Page<Receivable> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
         Page<Receivable> result = receivableMapper.selectPage(p, q);
@@ -144,9 +145,10 @@ public class FinanceController {
             @RequestParam(required = false) LocalDate createdTo,
             @RequestParam(required = false) String customerName,
             @RequestParam(required = false) String salesUserName,
-            @RequestParam(required = false) String productName) {
+            @RequestParam(required = false) String productName,
+            @RequestParam(required = false) String orderNo) {
         List<Receivable> recs = receivableMapper.selectList(receivableQuery(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName));
+                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName, orderNo));
         enrichReceivables(recs);
         return Result.success(recs);
     }
@@ -158,9 +160,10 @@ public class FinanceController {
             LocalDate createdTo,
             String customerName,
             String salesUserName,
-            String productName) {
+            String productName,
+            String orderNo) {
         ReceivableFilterParams params = toFilterParams(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName, null);
+                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName, orderNo, null);
         LambdaQueryWrapper<Receivable> q = new LambdaQueryWrapper<Receivable>()
                 .orderByDesc(Receivable::getCreatedAt);
         applyReceivableFilters(q, params);
@@ -175,6 +178,7 @@ public class FinanceController {
             String customerName,
             String salesUserName,
             String productName,
+            String orderNo,
             Boolean excludeSettledAndCancelled) {
         ReceivableFilterParams params = new ReceivableFilterParams();
         params.setStatus(status);
@@ -193,6 +197,9 @@ public class FinanceController {
         }
         if (productName != null && !productName.isBlank()) {
             params.setProductName(productName.trim());
+        }
+        if (orderNo != null && !orderNo.isBlank()) {
+            params.setOrderNo(orderNo.trim());
         }
         params.setExcludeSettledAndCancelled(excludeSettledAndCancelled);
         return params;
@@ -226,31 +233,39 @@ public class FinanceController {
         if (params.getSalesUserName() != null) {
             String prefix = params.getSalesUserName() + "%";
             q.apply("""
-                    EXISTS (
-                        SELECT 1 FROM invoice i
-                        INNER JOIN sales_order o ON o.id = i.order_id
+                    order_id IN (
+                        SELECT o.id FROM sales_order o
                         INNER JOIN user u ON u.id = o.sales_user_id
-                        WHERE i.id = receivable.invoice_id
-                          AND (u.real_name LIKE {0} OR u.username LIKE {0})
+                        WHERE u.real_name LIKE {0} OR u.username LIKE {0}
                     )
                     """, prefix, prefix);
         }
         if (params.getProductName() != null) {
-            String pattern = escapeLike(params.getProductName()) + "%";
-            q.apply("""
-                    invoice_id IN (
-                        SELECT i.id FROM invoice i
-                        INNER JOIN sales_order_item soi ON soi.order_id = i.order_id
-                        INNER JOIN product prod ON prod.id = soi.product_id
-                        WHERE prod.name LIKE {0}
-                    )
-                    """, pattern);
+            q.likeRight(Receivable::getProductName, params.getProductName());
+        }
+        if (params.getOrderNo() != null) {
+            q.likeRight(Receivable::getOrderNo, params.getOrderNo());
         }
     }
 
-    /** Escape % and _ for SQL LIKE patterns. */
-    private static String escapeLike(String keyword) {
-        return keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    /** Paginated payment records for a receivable (supports multiple partial payments). */
+    @GetMapping("/receivables/{id}/payments")
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    public Result<PageResult<PaymentRecord>> receivablePayments(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
+        Receivable rec = receivableMapper.selectById(id);
+        if (rec == null) throw new BusinessException("Receivable not found");
+
+        Page<PaymentRecord> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
+        Page<PaymentRecord> result = paymentRecordMapper.selectPage(p,
+                new LambdaQueryWrapper<PaymentRecord>()
+                        .eq(PaymentRecord::getReceivableId, id)
+                        .orderByDesc(PaymentRecord::getPaidAt)
+                        .orderByDesc(PaymentRecord::getId));
+        enrichPaymentRecords(result.getRecords());
+        return Result.success(PageQuery.from(result));
     }
 
     /** Record a payment against a receivable */
@@ -268,10 +283,23 @@ public class FinanceController {
         if (invCheck != null && "CANCELLED".equals(invCheck.getStatus())) {
             throw new BusinessException("Invoice is cancelled");
         }
+        if (req.getAmount() == null || req.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("Payment amount must be positive");
+        }
 
         BigDecimal newReceived = rec.getReceivedAmount().add(req.getAmount());
         if (newReceived.compareTo(rec.getAmount()) > 0)
             throw new BusinessException("Payment exceeds balance");
+
+        PaymentRecord payment = new PaymentRecord();
+        payment.setReceivableId(id);
+        payment.setAmount(req.getAmount());
+        payment.setPaymentMethod(req.getPaymentMethod());
+        payment.setMpesaRef(req.getMpesaRef());
+        payment.setPaidAt(req.getPaidAt() != null ? req.getPaidAt() : LocalDate.now());
+        payment.setRemark(req.getRemark());
+        payment.setCreatedBy(SecurityUtil.currentUserId());
+        paymentRecordMapper.insert(payment);
 
         rec.setReceivedAmount(newReceived);
         rec.setBalance(rec.getAmount().subtract(newReceived));
@@ -353,13 +381,13 @@ public class FinanceController {
         }
 
         Set<Long> customerIds = new HashSet<>();
-        Set<Long> invoiceIds = new HashSet<>();
+        Set<Long> orderIds = new HashSet<>();
         for (Receivable rec : recs) {
             if (rec.getCustomerId() != null) {
                 customerIds.add(rec.getCustomerId());
             }
-            if (rec.getInvoiceId() != null) {
-                invoiceIds.add(rec.getInvoiceId());
+            if (rec.getOrderId() != null) {
+                orderIds.add(rec.getOrderId());
             }
         }
 
@@ -372,30 +400,19 @@ public class FinanceController {
             }
         }
 
-        Map<Long, Long> invoiceToOrderId = new HashMap<>();
-        if (!invoiceIds.isEmpty()) {
-            List<Invoice> invoices = invoiceMapper.selectList(
-                    new LambdaQueryWrapper<Invoice>().in(Invoice::getId, invoiceIds));
-            for (Invoice inv : invoices) {
-                if (inv.getOrderId() != null) {
-                    invoiceToOrderId.put(inv.getId(), inv.getOrderId());
-                }
-            }
-        }
-
-        Set<Long> orderIds = new HashSet<>(invoiceToOrderId.values());
-        Map<Long, Long> orderToSalesUserId = new HashMap<>();
+        Map<Long, SalesOrder> orderMap = new HashMap<>();
+        Set<Long> salesUserIds = new HashSet<>();
         if (!orderIds.isEmpty()) {
             List<SalesOrder> orders = salesOrderMapper.selectList(
                     new LambdaQueryWrapper<SalesOrder>().in(SalesOrder::getId, orderIds));
             for (SalesOrder order : orders) {
+                orderMap.put(order.getId(), order);
                 if (order.getSalesUserId() != null) {
-                    orderToSalesUserId.put(order.getId(), order.getSalesUserId());
+                    salesUserIds.add(order.getSalesUserId());
                 }
             }
         }
 
-        Set<Long> salesUserIds = new HashSet<>(orderToSalesUserId.values());
         Map<Long, String> salesUserNames = new HashMap<>();
         if (!salesUserIds.isEmpty()) {
             List<User> users = userMapper.selectBatchIds(salesUserIds);
@@ -406,41 +423,47 @@ public class FinanceController {
             }
         }
 
-        Map<Long, List<SalesOrderItem>> itemsByOrderId = new HashMap<>();
-        if (!orderIds.isEmpty()) {
-            List<SalesOrderItem> items = salesOrderItemMapper.findWithProductByOrderIds(new ArrayList<>(orderIds));
-            for (SalesOrderItem item : items) {
-                itemsByOrderId.computeIfAbsent(item.getOrderId(), k -> new ArrayList<>()).add(item);
-            }
-        }
-
         for (Receivable rec : recs) {
             if (rec.getCustomerId() != null) {
                 rec.setCustomerName(customerNames.get(rec.getCustomerId()));
             }
-            Long orderId = invoiceToOrderId.get(rec.getInvoiceId());
-            if (orderId != null) {
-                Long salesUserId = orderToSalesUserId.get(orderId);
-                if (salesUserId != null) {
-                    rec.setSalesUserName(salesUserNames.get(salesUserId));
+            SalesOrder order = rec.getOrderId() != null ? orderMap.get(rec.getOrderId()) : null;
+            if (order != null) {
+                if (rec.getOrderNo() == null || rec.getOrderNo().isBlank()) {
+                    rec.setOrderNo(order.getOrderNo());
                 }
-                rec.setProductName(formatProductNameSummary(itemsByOrderId.getOrDefault(orderId, List.of())));
+                if (order.getSalesUserId() != null) {
+                    rec.setSalesUserName(salesUserNames.get(order.getSalesUserId()));
+                }
             }
         }
     }
 
-    private static String formatProductNameSummary(List<SalesOrderItem> items) {
-        if (items == null || items.isEmpty()) {
-            return "";
+    private void enrichPaymentRecords(List<PaymentRecord> payments) {
+        if (payments == null || payments.isEmpty()) {
+            return;
         }
-        return items.stream()
-                .map(item -> {
-                    String name = item.getProductName() != null && !item.getProductName().isBlank()
-                            ? item.getProductName().trim()
-                            : "Product #" + item.getProductId();
-                    return name + " ×" + item.getQty();
-                })
-                .collect(Collectors.joining(" / "));
+        Set<Long> userIds = new HashSet<>();
+        for (PaymentRecord payment : payments) {
+            if (payment.getCreatedBy() != null) {
+                userIds.add(payment.getCreatedBy());
+            }
+        }
+        if (userIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> names = new HashMap<>();
+        List<User> users = userMapper.selectBatchIds(userIds);
+        for (User u : users) {
+            if (u != null && u.getId() != null) {
+                names.put(u.getId(), userDisplayName(u));
+            }
+        }
+        for (PaymentRecord payment : payments) {
+            if (payment.getCreatedBy() != null) {
+                payment.setCreatedByName(names.get(payment.getCreatedBy()));
+            }
+        }
     }
 
     private static String userDisplayName(User u) {

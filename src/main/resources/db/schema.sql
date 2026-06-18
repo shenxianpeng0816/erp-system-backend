@@ -209,6 +209,11 @@ CREATE TABLE IF NOT EXISTS `invoice` (
 CREATE TABLE IF NOT EXISTS `receivable` (
     `id`              BIGINT       NOT NULL AUTO_INCREMENT,
     `invoice_id`      BIGINT       NOT NULL,
+    `order_id`        BIGINT       DEFAULT NULL,
+    `order_no`        VARCHAR(30)  DEFAULT NULL,
+    `order_item_id`   BIGINT       DEFAULT NULL,
+    `product_id`      BIGINT       DEFAULT NULL,
+    `product_name`    VARCHAR(200) DEFAULT NULL,
     `customer_id`     BIGINT       NOT NULL,
     `amount`          DECIMAL(15,2) NOT NULL,
     `received_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
@@ -222,6 +227,9 @@ CREATE TABLE IF NOT EXISTS `receivable` (
     KEY `idx_status_created` (`status`, `created_at`),
     KEY `idx_customer_id` (`customer_id`),
     KEY `idx_invoice_id` (`invoice_id`),
+    KEY `idx_order_no` (`order_no`),
+    KEY `idx_order_id` (`order_id`),
+    KEY `idx_product_name` (`product_name`),
     CONSTRAINT `fk_recv_invoice`  FOREIGN KEY (`invoice_id`)  REFERENCES `invoice` (`id`),
     CONSTRAINT `fk_recv_customer` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Accounts Receivable';

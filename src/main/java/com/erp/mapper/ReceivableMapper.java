@@ -40,22 +40,18 @@ public interface ReceivableMapper extends BaseMapper<Receivable> {
               )
             </if>
             <if test="p.salesUserName != null and p.salesUserName != ''">
-              AND EXISTS (
-                SELECT 1 FROM invoice i
-                INNER JOIN sales_order o ON o.id = i.order_id
+              AND r.order_id IN (
+                SELECT o.id FROM sales_order o
                 INNER JOIN user u ON u.id = o.sales_user_id
-                WHERE i.id = r.invoice_id
-                  AND (u.real_name LIKE CONCAT(#{p.salesUserName}, '%')
-                       OR u.username LIKE CONCAT(#{p.salesUserName}, '%'))
+                WHERE u.real_name LIKE CONCAT(#{p.salesUserName}, '%')
+                   OR u.username LIKE CONCAT(#{p.salesUserName}, '%')
               )
             </if>
             <if test="p.productName != null and p.productName != ''">
-              AND r.invoice_id IN (
-                SELECT i.id FROM invoice i
-                INNER JOIN sales_order_item soi ON soi.order_id = i.order_id
-                INNER JOIN product prod ON prod.id = soi.product_id
-                WHERE prod.name LIKE CONCAT(#{p.productName}, '%')
-              )
+              AND r.product_name LIKE CONCAT(#{p.productName}, '%')
+            </if>
+            <if test="p.orderNo != null and p.orderNo != ''">
+              AND r.order_no LIKE CONCAT(#{p.orderNo}, '%')
             </if>
             </script>
             """)

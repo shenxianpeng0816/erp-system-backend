@@ -674,16 +674,36 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         invoice.setPaymentMethod(order.getPaymentMethod());
         invoiceMapper.insert(invoice);
 
-        // Create matching receivable
-        Receivable rec = new Receivable();
-        rec.setInvoiceId(invoice.getId());
-        rec.setCustomerId(order.getBillToCustomerId());
-        rec.setAmount(order.getTotalAmount());
-        rec.setReceivedAmount(BigDecimal.ZERO);
-        rec.setBalance(order.getTotalAmount());
-        rec.setDueDate(invoice.getDueDate());
-        rec.setStatus("OUTSTANDING");
-        receivableMapper.insert(rec);
+        List<SalesOrderItem> items = itemMapper.findWithProductByOrderId(order.getId());
+        if (items == null || items.isEmpty()) {
+            throw new BusinessException("Cannot generate invoice: order has no items");
+        }
+        for (SalesOrderItem item : items) {
+            Receivable rec = new Receivable();
+            rec.setInvoiceId(invoice.getId());
+            rec.setOrderId(order.getId());
+            rec.setOrderNo(order.getOrderNo());
+            rec.setOrderItemId(item.getId());
+            rec.setProductId(item.getProductId());
+            rec.setProductName(resolveProductLabel(item));
+            rec.setCustomerId(order.getBillToCustomerId());
+            rec.setAmount(item.getTotal());
+            rec.setReceivedAmount(BigDecimal.ZERO);
+            rec.setBalance(item.getTotal());
+            rec.setDueDate(invoice.getDueDate());
+            rec.setStatus("OUTSTANDING");
+            receivableMapper.insert(rec);
+        }
+    }
+
+    private static String resolveProductLabel(SalesOrderItem item) {
+        if (item.getProductName() != null && !item.getProductName().isBlank()) {
+            return item.getProductName().trim();
+        }
+        if (item.getProductNo() != null && !item.getProductNo().isBlank()) {
+            return item.getProductNo().trim();
+        }
+        return "Product #" + item.getProductId();
     }
 
     /** Invoice dates follow the sales order country wall clock (KE/UG/TZ), not server default zone. */

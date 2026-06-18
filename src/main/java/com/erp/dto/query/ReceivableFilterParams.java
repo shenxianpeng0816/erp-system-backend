@@ -13,6 +13,7 @@ public class ReceivableFilterParams {
     private String customerName;
     private String salesUserName;
     private String productName;
+    private String orderNo;
     /** When true, exclude SETTLED and CANCELLED (summary default). */
     private Boolean excludeSettledAndCancelled;
 }

@@ -20,6 +20,9 @@ public class PaymentRecord {
     private String remark;
     private Long createdBy;
 
+    @TableField(exist = false)
+    private String createdByName;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 }

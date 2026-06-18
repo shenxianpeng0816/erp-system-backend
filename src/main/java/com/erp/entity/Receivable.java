@@ -14,6 +14,11 @@ public class Receivable {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long invoiceId;
+    private Long orderId;
+    private String orderNo;
+    private Long orderItemId;
+    private Long productId;
+    private String productName;
     private Long customerId;
     private BigDecimal amount;
     private BigDecimal receivedAmount;
@@ -26,8 +31,6 @@ public class Receivable {
     private String customerName;
     @TableField(exist = false)
     private String salesUserName;
-    @TableField(exist = false)
-    private String productName;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
