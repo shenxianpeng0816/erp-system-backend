@@ -236,17 +236,21 @@ public class FinanceController {
                     """, prefix, prefix);
         }
         if (params.getProductName() != null) {
-            String prefix = params.getProductName() + "%";
+            String pattern = escapeLike(params.getProductName()) + "%";
             q.apply("""
-                    EXISTS (
-                        SELECT 1 FROM invoice i
+                    invoice_id IN (
+                        SELECT i.id FROM invoice i
                         INNER JOIN sales_order_item soi ON soi.order_id = i.order_id
-                        INNER JOIN product p ON p.id = soi.product_id
-                        WHERE i.id = receivable.invoice_id
-                          AND (p.name LIKE {0} OR p.product_no LIKE {0} OR p.spec LIKE {0})
+                        INNER JOIN product prod ON prod.id = soi.product_id
+                        WHERE prod.name LIKE {0}
                     )
-                    """, prefix, prefix, prefix);
+                    """, pattern);
         }
+    }
+
+    /** Escape % and _ for SQL LIKE patterns. */
+    private static String escapeLike(String keyword) {
+        return keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     /** Record a payment against a receivable */
