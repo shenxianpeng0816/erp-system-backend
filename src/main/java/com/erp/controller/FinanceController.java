@@ -287,6 +287,19 @@ public class FinanceController {
             throw new BusinessException("Payment amount must be positive");
         }
 
+        String paymentMethod = normalizePaymentMethod(req.getPaymentMethod());
+        String transactionRef = resolveTransactionRef(paymentMethod, req.getTransactionRef());
+        if (transactionRef != null) {
+            long duplicateCount = paymentRecordMapper.selectCount(
+                    new LambdaQueryWrapper<PaymentRecord>()
+                            .eq(PaymentRecord::getPaymentMethod, paymentMethod)
+                            .apply("UPPER(TRIM(transaction_ref)) = {0}", transactionRef));
+            if (duplicateCount > 0) {
+                throw new BusinessException(
+                        "Transaction reference already exists for " + paymentMethod + ": " + transactionRef);
+            }
+        }
+
         BigDecimal newReceived = rec.getReceivedAmount().add(req.getAmount());
         if (newReceived.compareTo(rec.getAmount()) > 0)
             throw new BusinessException("Payment exceeds balance");
@@ -294,8 +307,8 @@ public class FinanceController {
         PaymentRecord payment = new PaymentRecord();
         payment.setReceivableId(id);
         payment.setAmount(req.getAmount());
-        payment.setPaymentMethod(req.getPaymentMethod());
-        payment.setMpesaRef(req.getMpesaRef());
+        payment.setPaymentMethod(paymentMethod);
+        payment.setTransactionRef(transactionRef);
         payment.setPaidAt(req.getPaidAt() != null ? req.getPaidAt() : LocalDate.now());
         payment.setRemark(req.getRemark());
         payment.setCreatedBy(SecurityUtil.currentUserId());
@@ -487,11 +500,40 @@ public class FinanceController {
         invoiceMapper.updateById(inv);
     }
 
+    private static final String METHOD_CASH = "Cash";
+
+    private static String normalizePaymentMethod(String method) {
+        if (method == null || method.isBlank()) {
+            throw new BusinessException("Payment method is required");
+        }
+        String trimmed = method.trim();
+        if ("Bank Transfer".equalsIgnoreCase(trimmed)) return "Bank Transfer";
+        if ("Mpesa".equalsIgnoreCase(trimmed)) return "Mpesa";
+        if ("Cash".equalsIgnoreCase(trimmed)) return "Cash";
+        if ("Cheque".equalsIgnoreCase(trimmed)) return "Cheque";
+        return trimmed;
+    }
+
+    private static boolean requiresTransactionRef(String paymentMethod) {
+        return !METHOD_CASH.equalsIgnoreCase(paymentMethod);
+    }
+
+    /** Returns null for Cash; otherwise normalized transaction ref (uppercase, trimmed). */
+    private static String resolveTransactionRef(String paymentMethod, String rawRef) {
+        if (!requiresTransactionRef(paymentMethod)) {
+            return null;
+        }
+        if (rawRef == null || rawRef.isBlank()) {
+            throw new BusinessException("Transaction reference is required for " + paymentMethod);
+        }
+        return rawRef.trim().toUpperCase();
+    }
+
     @Data
     public static class PaymentRequest {
         private BigDecimal amount;
         private String paymentMethod;
-        private String mpesaRef;
+        private String transactionRef;
         private LocalDate paidAt;
         private String remark;
     }

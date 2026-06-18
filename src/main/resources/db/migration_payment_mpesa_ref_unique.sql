@@ -1,0 +1,2 @@
+-- Superseded by migration_payment_transaction_ref.sql
+-- Kept for reference only.

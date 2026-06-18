@@ -15,7 +15,7 @@ public class PaymentRecord {
     private Long receivableId;
     private BigDecimal amount;
     private String paymentMethod;
-    private String mpesaRef;
+    private String transactionRef;
     private LocalDate paidAt;
     private String remark;
     private Long createdBy;

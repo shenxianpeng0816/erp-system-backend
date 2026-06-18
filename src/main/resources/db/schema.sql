@@ -241,13 +241,14 @@ CREATE TABLE IF NOT EXISTS `payment_record` (
     `id`             BIGINT       NOT NULL AUTO_INCREMENT,
     `receivable_id`  BIGINT       NOT NULL,
     `amount`         DECIMAL(15,2) NOT NULL,
-    `payment_method` VARCHAR(50)  DEFAULT NULL COMMENT 'Bank Transfer / Mpesa',
-    `mpesa_ref`      VARCHAR(100) DEFAULT NULL,
+    `payment_method` VARCHAR(50)  DEFAULT NULL COMMENT 'Bank Transfer / Mpesa / Cash / Cheque',
+    `transaction_ref` VARCHAR(100) DEFAULT NULL COMMENT 'Required except for Cash',
     `paid_at`        DATE         NOT NULL,
     `remark`         TEXT         DEFAULT NULL,
     `created_by`     BIGINT       NOT NULL,
     `created_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_payment_method_transaction_ref` (`payment_method`, `transaction_ref`),
     CONSTRAINT `fk_payment_recv`       FOREIGN KEY (`receivable_id`) REFERENCES `receivable` (`id`),
     CONSTRAINT `fk_payment_created_by` FOREIGN KEY (`created_by`)    REFERENCES `user` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Payment Records';

@@ -63,13 +63,16 @@ WHERE r.product_id IS NULL
       WHERE r2.invoice_id = r.invoice_id AND r2.order_item_id = soi.id
   );
 
+-- Remove legacy aggregate rows after per-line rows were inserted (MySQL cannot reference
+-- the target table in a subquery on DELETE, so use a derived table join instead).
 DELETE r FROM `receivable` r
     INNER JOIN `invoice` i ON i.id = r.invoice_id
+    INNER JOIN (
+        SELECT DISTINCT invoice_id
+        FROM `receivable`
+        WHERE order_item_id IS NOT NULL
+    ) split ON split.invoice_id = r.invoice_id
 WHERE r.product_id IS NULL
   AND r.received_amount = 0
   AND r.status NOT IN ('CANCELLED', 'SETTLED')
-  AND (SELECT COUNT(*) FROM `sales_order_item` x WHERE x.order_id = i.order_id) > 1
-  AND EXISTS (
-      SELECT 1 FROM `receivable` r2
-      WHERE r2.invoice_id = r.invoice_id AND r2.order_item_id IS NOT NULL
-  );
+  AND (SELECT COUNT(*) FROM `sales_order_item` x WHERE x.order_id = i.order_id) > 1;
