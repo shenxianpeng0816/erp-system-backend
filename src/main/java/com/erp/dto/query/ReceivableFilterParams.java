@@ -12,6 +12,7 @@ public class ReceivableFilterParams {
     private LocalDateTime createdToExclusive;
     private String customerName;
     private String salesUserName;
+    private String productName;
     /** When true, exclude SETTLED and CANCELLED (summary default). */
     private Boolean excludeSettledAndCancelled;
 }

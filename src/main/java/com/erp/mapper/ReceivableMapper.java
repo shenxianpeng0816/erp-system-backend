@@ -49,6 +49,14 @@ public interface ReceivableMapper extends BaseMapper<Receivable> {
                        OR u.username LIKE CONCAT(#{p.salesUserName}, '%'))
               )
             </if>
+            <if test="p.productName != null and p.productName != ''">
+              AND EXISTS (
+                SELECT 1 FROM invoice i
+                INNER JOIN sales_order_item soi ON soi.order_id = i.order_id
+                INNER JOIN product p ON p.id = soi.product_id
+                WHERE i.id = r.invoice_id AND p.name LIKE CONCAT(#{p.productName}, '%')
+              )
+            </if>
             </script>
             """)
     ReceivableSummaryAgg summarizeReceivables(@Param("p") ReceivableFilterParams params);

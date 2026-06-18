@@ -100,9 +100,10 @@ public class FinanceController {
             @RequestParam(required = false) LocalDate createdFrom,
             @RequestParam(required = false) LocalDate createdTo,
             @RequestParam(required = false) String customerName,
-            @RequestParam(required = false) String salesUserName) {
+            @RequestParam(required = false) String salesUserName,
+            @RequestParam(required = false) String productName) {
         ReceivableFilterParams params = toFilterParams(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName,
+                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName,
                 status == null);
         ReceivableSummaryAgg agg = receivableMapper.summarizeReceivables(params);
         ReceivableSummary summary = new ReceivableSummary();
@@ -121,10 +122,11 @@ public class FinanceController {
             @RequestParam(required = false) LocalDate createdTo,
             @RequestParam(required = false) String customerName,
             @RequestParam(required = false) String salesUserName,
+            @RequestParam(required = false) String productName,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size) {
         LambdaQueryWrapper<Receivable> q = receivableQuery(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName);
+                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName);
 
         Page<Receivable> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
         Page<Receivable> result = receivableMapper.selectPage(p, q);
@@ -141,9 +143,10 @@ public class FinanceController {
             @RequestParam(required = false) LocalDate createdFrom,
             @RequestParam(required = false) LocalDate createdTo,
             @RequestParam(required = false) String customerName,
-            @RequestParam(required = false) String salesUserName) {
+            @RequestParam(required = false) String salesUserName,
+            @RequestParam(required = false) String productName) {
         List<Receivable> recs = receivableMapper.selectList(receivableQuery(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName));
+                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName));
         enrichReceivables(recs);
         return Result.success(recs);
     }
@@ -154,9 +157,10 @@ public class FinanceController {
             LocalDate createdFrom,
             LocalDate createdTo,
             String customerName,
-            String salesUserName) {
+            String salesUserName,
+            String productName) {
         ReceivableFilterParams params = toFilterParams(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName, null);
+                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName, null);
         LambdaQueryWrapper<Receivable> q = new LambdaQueryWrapper<Receivable>()
                 .orderByDesc(Receivable::getCreatedAt);
         applyReceivableFilters(q, params);
@@ -170,6 +174,7 @@ public class FinanceController {
             LocalDate createdTo,
             String customerName,
             String salesUserName,
+            String productName,
             Boolean excludeSettledAndCancelled) {
         ReceivableFilterParams params = new ReceivableFilterParams();
         params.setStatus(status);
@@ -185,6 +190,9 @@ public class FinanceController {
         }
         if (salesUserName != null && !salesUserName.isBlank()) {
             params.setSalesUserName(salesUserName.trim());
+        }
+        if (productName != null && !productName.isBlank()) {
+            params.setProductName(productName.trim());
         }
         params.setExcludeSettledAndCancelled(excludeSettledAndCancelled);
         return params;
@@ -226,6 +234,18 @@ public class FinanceController {
                           AND (u.real_name LIKE {0} OR u.username LIKE {0})
                     )
                     """, prefix, prefix);
+        }
+        if (params.getProductName() != null) {
+            String prefix = params.getProductName() + "%";
+            q.apply("""
+                    EXISTS (
+                        SELECT 1 FROM invoice i
+                        INNER JOIN sales_order_item soi ON soi.order_id = i.order_id
+                        INNER JOIN product p ON p.id = soi.product_id
+                        WHERE i.id = receivable.invoice_id
+                          AND (p.name LIKE {0} OR p.product_no LIKE {0} OR p.spec LIKE {0})
+                    )
+                    """, prefix, prefix, prefix);
         }
     }
 
