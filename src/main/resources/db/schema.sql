@@ -214,6 +214,8 @@ CREATE TABLE IF NOT EXISTS `receivable` (
     `order_item_id`   BIGINT       DEFAULT NULL,
     `product_id`      BIGINT       DEFAULT NULL,
     `product_name`    VARCHAR(200) DEFAULT NULL,
+    `qty`             INT          DEFAULT NULL COMMENT 'sales_order_item.qty',
+    `unit_price`      DECIMAL(15,2) DEFAULT NULL COMMENT 'sales_order_item.unit_price',
     `customer_id`     BIGINT       NOT NULL,
     `amount`          DECIMAL(15,2) NOT NULL,
     `received_amount` DECIMAL(15,2) NOT NULL DEFAULT 0.00,

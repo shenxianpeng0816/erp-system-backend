@@ -19,6 +19,8 @@ public class Receivable {
     private Long orderItemId;
     private Long productId;
     private String productName;
+    private Integer qty;
+    private BigDecimal unitPrice;
     private Long customerId;
     private BigDecimal amount;
     private BigDecimal receivedAmount;

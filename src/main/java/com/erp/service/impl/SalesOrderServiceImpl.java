@@ -686,6 +686,8 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             rec.setOrderItemId(item.getId());
             rec.setProductId(item.getProductId());
             rec.setProductName(resolveProductLabel(item));
+            rec.setQty(item.getQty());
+            rec.setUnitPrice(item.getUnitPrice());
             rec.setCustomerId(order.getBillToCustomerId());
             rec.setAmount(item.getTotal());
             rec.setReceivedAmount(BigDecimal.ZERO);
