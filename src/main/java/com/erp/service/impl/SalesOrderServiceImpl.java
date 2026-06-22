@@ -11,7 +11,10 @@ import com.erp.dto.request.CreateOrderRequest;
 import com.erp.entity.*;
 import com.erp.mapper.*;
 import com.erp.service.DocSequenceService;
+import com.erp.service.InventoryService;
 import com.erp.service.SalesOrderService;
+import com.erp.service.StockChangeContext;
+import com.erp.service.WarehouseService;
 import com.erp.util.SecurityUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -39,13 +42,14 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final InvoiceMapper invoiceMapper;
     private final OutboundOrderMapper outboundMapper;
     private final OutboundItemMapper outboundItemMapper;
-    private final InventoryMapper inventoryMapper;
-    private final InventoryLogMapper inventoryLogMapper;
+    private final InventoryService inventoryService;
     private final ReceivableMapper receivableMapper;
     private final DocSequenceService docSequenceService;
     private final UserMapper userMapper;
     private final CustomerMapper customerMapper;
     private final ProductMapper productMapper;
+    private final WarehouseService warehouseService;
+    private final WarehouseMapper warehouseMapper;
 
     @Override
     @Transactional
@@ -56,6 +60,9 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         order.setShipToCustomerId(req.getShipToCustomerId());
         order.setBillToCustomerId(req.getBillToCustomerId());
         order.setCountryCode(normalizeCountryCode(req.getCountryCode()));
+        Warehouse warehouse = warehouseService.requireActiveForCountry(
+                req.getWarehouseId(), order.getCountryCode());
+        order.setShipFromWarehouseId(warehouse.getId());
         order.setPaymentMethod(req.getPaymentMethod());
         order.setPriceTerm(req.getPriceTerm());
         order.setValidityDays(req.getValidityDays() != null ? req.getValidityDays() : 30);
@@ -79,7 +86,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
         order.setStatus("DRAFT");
 
-        validateOrderItemsStock(req.getItems());
+        validateOrderItemsStock(req.getItems(), warehouse.getId());
 
         BigDecimal total = BigDecimal.ZERO;
         orderMapper.insert(order);
@@ -259,6 +266,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         }
         Set<Long> customerIds = new HashSet<>();
         Set<Long> salesUserIds = new HashSet<>();
+        Set<Long> warehouseIds = new HashSet<>();
         for (SalesOrder o : orders) {
             if (o.getShipToCustomerId() != null) {
                 customerIds.add(o.getShipToCustomerId());
@@ -268,6 +276,9 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             }
             if (o.getSalesUserId() != null) {
                 salesUserIds.add(o.getSalesUserId());
+            }
+            if (o.getShipFromWarehouseId() != null) {
+                warehouseIds.add(o.getShipFromWarehouseId());
             }
         }
         Map<Long, String> customerNames = new HashMap<>();
@@ -287,6 +298,14 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                 }
             }
         }
+        Map<Long, String> warehouseNames = new HashMap<>();
+        if (!warehouseIds.isEmpty()) {
+            List<Warehouse> warehouses = warehouseMapper.selectList(
+                    new LambdaQueryWrapper<Warehouse>().in(Warehouse::getId, warehouseIds));
+            for (Warehouse w : warehouses) {
+                warehouseNames.put(w.getId(), w.getName());
+            }
+        }
         for (SalesOrder o : orders) {
             if (o.getSalesUserId() != null) {
                 o.setSalesUserName(salesUserNames.get(o.getSalesUserId()));
@@ -296,6 +315,9 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             }
             if (o.getBillToCustomerId() != null) {
                 o.setBillToCustomerName(customerNames.get(o.getBillToCustomerId()));
+            }
+            if (o.getShipFromWarehouseId() != null) {
+                o.setShipFromWarehouseName(warehouseNames.get(o.getShipFromWarehouseId()));
             }
         }
     }
@@ -438,6 +460,9 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         order.setShipToCustomerId(req.getShipToCustomerId());
         order.setBillToCustomerId(req.getBillToCustomerId());
         order.setCountryCode(normalizeCountryCode(req.getCountryCode()));
+        Warehouse warehouse = warehouseService.requireActiveForCountry(
+                req.getWarehouseId(), order.getCountryCode());
+        order.setShipFromWarehouseId(warehouse.getId());
         order.setPaymentMethod(req.getPaymentMethod());
         order.setPriceTerm(req.getPriceTerm());
         order.setValidityDays(req.getValidityDays() != null ? req.getValidityDays() : 30);
@@ -462,7 +487,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         itemMapper.delete(
                 new LambdaQueryWrapper<SalesOrderItem>().eq(SalesOrderItem::getOrderId, orderId));
 
-        validateOrderItemsStock(req.getItems());
+        validateOrderItemsStock(req.getItems(), warehouse.getId());
 
         BigDecimal total = BigDecimal.ZERO;
         for (CreateOrderRequest.OrderItemRequest i : req.getItems()) {
@@ -573,40 +598,40 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
     private void restoreInventoryForOutbound(OutboundOrder dn) {
         Long operatorId = SecurityUtil.currentUserId();
+        Long warehouseId = dn.getWarehouseId();
+        if (warehouseId == null) {
+            SalesOrder order = orderMapper.selectById(dn.getOrderId());
+            if (order != null) {
+                warehouseId = order.getShipFromWarehouseId();
+            }
+        }
+        if (warehouseId == null) {
+            throw new BusinessException("Cannot restore stock: outbound has no warehouse");
+        }
+
         List<OutboundItem> items = outboundItemMapper.selectList(
                 new LambdaQueryWrapper<OutboundItem>().eq(OutboundItem::getOutboundId, dn.getId()));
         for (OutboundItem item : items) {
-            Inventory inv = inventoryMapper.selectOne(
-                    new LambdaQueryWrapper<Inventory>().eq(Inventory::getProductId, item.getProductId()));
-            if (inv == null) {
-                inv = new Inventory();
-                inv.setProductId(item.getProductId());
-                inv.setQty(item.getQty());
-                inventoryMapper.insert(inv);
-            } else {
-                inv.setQty(inv.getQty() + item.getQty());
-                inventoryMapper.updateById(inv);
-            }
-
-            InventoryLog log = new InventoryLog();
-            log.setProductId(item.getProductId());
-            log.setType("ADJUST");
-            log.setQtyChange(item.getQty());
-            log.setQtyAfter(inv.getQty());
-            log.setRefId(dn.getId());
-            log.setRefType("ORDER_CANCEL");
-            log.setOperatorId(operatorId);
-            log.setRemark("Order cancel restore: " + dn.getOutboundNo());
-            inventoryLogMapper.insert(log);
+            inventoryService.addStock(
+                    warehouseId,
+                    item.getProductId(),
+                    item.getQty(),
+                    new StockChangeContext(
+                            "ADJUST", dn.getId(), "ORDER_CANCEL", operatorId,
+                            "Order cancel restore: " + dn.getOutboundNo()));
         }
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
-    private void validateOrderItemsStock(List<CreateOrderRequest.OrderItemRequest> items) {
+    private void validateOrderItemsStock(List<CreateOrderRequest.OrderItemRequest> items, Long warehouseId) {
         if (items == null || items.isEmpty()) {
             throw new BusinessException("Order must contain at least one line item");
         }
+        if (warehouseId == null) {
+            throw new BusinessException("Ship-from warehouse is required");
+        }
+        Warehouse warehouse = warehouseService.requireActive(warehouseId);
         for (CreateOrderRequest.OrderItemRequest i : items) {
             if (i.getProductId() == null) {
                 throw new BusinessException("Each line item must have a product");
@@ -619,15 +644,14 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                     ? product.getProductNo() + " — " + product.getName()
                     : "Product #" + i.getProductId();
 
-            Inventory inv = inventoryMapper.selectOne(
-                    new LambdaQueryWrapper<Inventory>().eq(Inventory::getProductId, i.getProductId()));
-            int available = inv != null && inv.getQty() != null ? inv.getQty() : 0;
+            int available = inventoryService.getAvailableQty(warehouseId, i.getProductId());
             if (available <= 0) {
-                throw new BusinessException("No available stock for " + productLabel);
+                throw new BusinessException("No available stock at " + warehouse.getName() + " for " + productLabel);
             }
             if (i.getQty() > available) {
                 throw new BusinessException(
-                        "Insufficient stock for " + productLabel + ". Available: " + available);
+                        "Insufficient stock at " + warehouse.getName() + " for " + productLabel
+                                + ". Available: " + available);
             }
         }
     }
@@ -723,6 +747,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         OutboundOrder dn = new OutboundOrder();
         dn.setOutboundNo(docSequenceService.nextDocNo("DN"));
         dn.setOrderId(order.getId());
+        dn.setWarehouseId(order.getShipFromWarehouseId());
         dn.setShipToCustomerId(order.getShipToCustomerId());
         dn.setStatus("PENDING");
         outboundMapper.insert(dn);

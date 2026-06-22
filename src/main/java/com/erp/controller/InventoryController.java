@@ -6,9 +6,11 @@ import com.erp.common.result.Result;
 import com.erp.entity.Inventory;
 import com.erp.entity.InventoryLog;
 import com.erp.entity.Product;
+import com.erp.entity.Warehouse;
 import com.erp.mapper.InventoryLogMapper;
 import com.erp.mapper.InventoryMapper;
 import com.erp.mapper.ProductMapper;
+import com.erp.mapper.WarehouseMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -16,6 +18,9 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/inventory")
@@ -25,26 +30,49 @@ public class InventoryController {
     private final InventoryMapper inventoryMapper;
     private final InventoryLogMapper inventoryLogMapper;
     private final ProductMapper productMapper;
+    private final WarehouseMapper warehouseMapper;
 
     @GetMapping
-    public Result<List<Inventory>> list() {
-        return Result.success(inventoryMapper.selectList(null));
+    public Result<List<Inventory>> list(@RequestParam(required = false) Long warehouseId) {
+        LambdaQueryWrapper<Inventory> q = new LambdaQueryWrapper<Inventory>()
+                .orderByAsc(Inventory::getProductId);
+        if (warehouseId != null) {
+            q.eq(Inventory::getWarehouseId, warehouseId);
+        }
+        List<Inventory> rows = inventoryMapper.selectList(q);
+        enrichWarehouseNames(rows);
+        return Result.success(rows);
     }
 
     /** Products with stock below minimum threshold */
     @GetMapping("/alerts")
     @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
-    public Result<List<Inventory>> alerts() {
-        return Result.success(inventoryMapper.selectList(
-                new LambdaQueryWrapper<Inventory>()
-                        .apply("qty <= min_qty")));
+    public Result<List<Inventory>> alerts(@RequestParam(required = false) Long warehouseId) {
+        LambdaQueryWrapper<Inventory> q = new LambdaQueryWrapper<Inventory>()
+                .apply("qty <= min_qty");
+        if (warehouseId != null) {
+            q.eq(Inventory::getWarehouseId, warehouseId);
+        }
+        List<Inventory> rows = inventoryMapper.selectList(q);
+        enrichWarehouseNames(rows);
+        return Result.success(rows);
     }
 
     /** Transaction log for a specific product */
     @GetMapping("/logs/{productId}")
     @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND','FINANCE')")
-    public Result<List<InventoryLog>> logs(@PathVariable Long productId) {
-        return Result.success(inventoryLogMapper.findByProduct(productId));
+    public Result<List<InventoryLog>> logs(
+            @PathVariable Long productId,
+            @RequestParam(required = false) Long warehouseId) {
+        LambdaQueryWrapper<InventoryLog> q = new LambdaQueryWrapper<InventoryLog>()
+                .eq(InventoryLog::getProductId, productId)
+                .orderByDesc(InventoryLog::getCreatedAt);
+        if (warehouseId != null) {
+            q.eq(InventoryLog::getWarehouseId, warehouseId);
+        }
+        List<InventoryLog> logs = inventoryLogMapper.selectList(q);
+        enrichLogWarehouseNames(logs);
+        return Result.success(logs);
     }
 
     /** Transaction log for a specific inbound/outbound order */
@@ -53,7 +81,9 @@ public class InventoryController {
     public Result<List<InventoryLog>> logsByRef(
             @RequestParam Long refId,
             @RequestParam String refType) {
-        return Result.success(inventoryLogMapper.findByRef(refId, refType));
+        List<InventoryLog> logs = inventoryLogMapper.findByRef(refId, refType);
+        enrichLogWarehouseNames(logs);
+        return Result.success(logs);
     }
 
     /**
@@ -62,34 +92,85 @@ public class InventoryController {
      */
     @GetMapping("/transaction-logs")
     @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND','FINANCE')")
-    public Result<List<InventoryLog>> transactionLogs() {
-        return Result.success(inventoryLogMapper.selectList(
-                new LambdaQueryWrapper<InventoryLog>()
-                        .orderByDesc(InventoryLog::getCreatedAt)
-                        .last("LIMIT 3000")));
+    public Result<List<InventoryLog>> transactionLogs(
+            @RequestParam(required = false) Long warehouseId) {
+        LambdaQueryWrapper<InventoryLog> q = new LambdaQueryWrapper<InventoryLog>()
+                .orderByDesc(InventoryLog::getCreatedAt)
+                .last("LIMIT 3000");
+        if (warehouseId != null) {
+            q.eq(InventoryLog::getWarehouseId, warehouseId);
+        }
+        List<InventoryLog> logs = inventoryLogMapper.selectList(q);
+        enrichLogWarehouseNames(logs);
+        return Result.success(logs);
     }
 
     @GetMapping("/products")
-    public Result<List<Product>> products() {
+    public Result<List<Product>> products(@RequestParam(required = false) Long warehouseId) {
         List<Product> products = productMapper.selectList(
                 new LambdaQueryWrapper<Product>().eq(Product::getStatus, 1));
-        enrichProductStock(products);
+        enrichProductStock(products, warehouseId);
         return Result.success(products);
     }
 
-    private void enrichProductStock(List<Product> products) {
+    private void enrichProductStock(List<Product> products, Long warehouseId) {
         if (products == null || products.isEmpty()) {
             return;
         }
         List<Long> productIds = products.stream().map(Product::getId).toList();
-        List<Inventory> inventories = inventoryMapper.selectList(
-                new LambdaQueryWrapper<Inventory>().in(Inventory::getProductId, productIds));
+        LambdaQueryWrapper<Inventory> q = new LambdaQueryWrapper<Inventory>()
+                .in(Inventory::getProductId, productIds);
+        if (warehouseId != null) {
+            q.eq(Inventory::getWarehouseId, warehouseId);
+        }
+        List<Inventory> inventories = inventoryMapper.selectList(q);
         Map<Long, Integer> qtyByProduct = new HashMap<>();
         for (Inventory inv : inventories) {
-            qtyByProduct.put(inv.getProductId(), inv.getQty() != null ? inv.getQty() : 0);
+            int qty = inv.getQty() != null ? inv.getQty() : 0;
+            if (warehouseId != null) {
+                qtyByProduct.put(inv.getProductId(), qty);
+            } else {
+                qtyByProduct.merge(inv.getProductId(), qty, Integer::sum);
+            }
         }
         for (Product p : products) {
             p.setStockQty(qtyByProduct.getOrDefault(p.getId(), 0));
+        }
+    }
+
+    private void enrichWarehouseNames(List<Inventory> rows) {
+        if (rows == null || rows.isEmpty()) return;
+        Set<Long> whIds = rows.stream()
+                .map(Inventory::getWarehouseId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (whIds.isEmpty()) return;
+        Map<Long, String> names = warehouseMapper.selectList(
+                        new LambdaQueryWrapper<Warehouse>().in(Warehouse::getId, whIds))
+                .stream()
+                .collect(Collectors.toMap(Warehouse::getId, Warehouse::getName, (a, b) -> a));
+        for (Inventory row : rows) {
+            if (row.getWarehouseId() != null) {
+                row.setWarehouseName(names.get(row.getWarehouseId()));
+            }
+        }
+    }
+
+    private void enrichLogWarehouseNames(List<InventoryLog> logs) {
+        if (logs == null || logs.isEmpty()) return;
+        Set<Long> whIds = logs.stream()
+                .map(InventoryLog::getWarehouseId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (whIds.isEmpty()) return;
+        Map<Long, String> names = warehouseMapper.selectList(
+                        new LambdaQueryWrapper<Warehouse>().in(Warehouse::getId, whIds))
+                .stream()
+                .collect(Collectors.toMap(Warehouse::getId, Warehouse::getName, (a, b) -> a));
+        for (InventoryLog log : logs) {
+            if (log.getWarehouseId() != null) {
+                log.setWarehouseName(names.get(log.getWarehouseId()));
+            }
         }
     }
 
@@ -126,9 +207,11 @@ public class InventoryController {
     public Result<Void> deleteProduct(@PathVariable Long id) {
         Product existing = productMapper.selectById(id);
         if (existing == null) throw new BusinessException("Product not found");
-        Inventory inv = inventoryMapper.selectOne(
-                new LambdaQueryWrapper<Inventory>().eq(Inventory::getProductId, id));
-        if (inv != null && inv.getQty() != null && inv.getQty() > 0) {
+        long positiveRows = inventoryMapper.selectCount(
+                new LambdaQueryWrapper<Inventory>()
+                        .eq(Inventory::getProductId, id)
+                        .gt(Inventory::getQty, 0));
+        if (positiveRows > 0) {
             throw new BusinessException(
                     "Cannot delete product with remaining stock. Please clear the inventory first.");
         }

@@ -8,6 +8,8 @@ import com.erp.common.result.Result;
 import com.erp.common.exception.BusinessException;
 import com.erp.entity.*;
 import com.erp.mapper.*;
+import com.erp.service.InventoryService;
+import com.erp.service.StockChangeContext;
 import com.erp.util.SecurityUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,6 +22,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -30,17 +33,18 @@ public class OutboundController {
 
     private final OutboundOrderMapper outboundMapper;
     private final OutboundItemMapper outboundItemMapper;
-    private final InventoryMapper inventoryMapper;
-    private final InventoryLogMapper inventoryLogMapper;
+    private final InventoryService inventoryService;
     private final SalesOrderMapper orderMapper;
     private final CustomerMapper customerMapper;
     private final UserMapper userMapper;
+    private final WarehouseMapper warehouseMapper;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
     public Result<PageResult<OutboundOrder>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String orderNo,
+            @RequestParam(required = false) Long warehouseId,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size) {
         page = PageQuery.normalizePage(page);
@@ -48,6 +52,9 @@ public class OutboundController {
 
         LambdaQueryWrapper<OutboundOrder> q = new LambdaQueryWrapper<OutboundOrder>()
                 .orderByDesc(OutboundOrder::getCreatedAt);
+        if (warehouseId != null) {
+            q.eq(OutboundOrder::getWarehouseId, warehouseId);
+        }
         if (keyword != null && !keyword.isBlank()) {
             q.like(OutboundOrder::getOutboundNo, keyword.trim());
         }
@@ -113,42 +120,37 @@ public class OutboundController {
             throw new BusinessException("Sales order is cancelled");
         }
 
+        Long warehouseId = dn.getWarehouseId();
+        if (warehouseId == null && linkedOrder != null) {
+            warehouseId = linkedOrder.getShipFromWarehouseId();
+        }
+        if (warehouseId == null) {
+            throw new BusinessException("Outbound order has no warehouse");
+        }
+
         Long operatorId = SecurityUtil.currentUserId();
 
         List<OutboundItem> items = outboundItemMapper.selectList(
                 new LambdaQueryWrapper<OutboundItem>().eq(OutboundItem::getOutboundId, id));
 
         for (OutboundItem item : items) {
-            Inventory inv = inventoryMapper.selectOne(
-                    new LambdaQueryWrapper<Inventory>().eq(Inventory::getProductId, item.getProductId()));
-            if (inv == null)
-                throw new BusinessException("No inventory record for product: " + item.getProductId());
-            if (inv.getQty() < item.getQty())
-                throw new BusinessException("Insufficient stock for product: " + item.getProductId());
-
-            int qtyBefore = inv.getQty();
-            inv.setQty(qtyBefore - item.getQty());
-            inventoryMapper.updateById(inv);
-
-            // ── Write inventory log ──────────────────────────────────────────
-            InventoryLog log = new InventoryLog();
-            log.setProductId(item.getProductId());
-            log.setType("OUTBOUND");
-            log.setQtyChange(-item.getQty());          // negative = out
-            log.setQtyAfter(inv.getQty());
-            log.setRefId(id);
-            log.setRefType("OUTBOUND");
-            log.setOperatorId(operatorId);
-            log.setRemark("Outbound: " + dn.getOutboundNo());
-            inventoryLogMapper.insert(log);
+            inventoryService.deductStock(
+                    warehouseId,
+                    item.getProductId(),
+                    item.getQty(),
+                    new StockChangeContext(
+                            "OUTBOUND", id, "OUTBOUND", operatorId,
+                            "Outbound: " + dn.getOutboundNo()));
         }
 
         dn.setStatus("SHIPPED");
         dn.setOperatorId(operatorId);
         dn.setShippedAt(LocalDateTime.now());
+        if (dn.getWarehouseId() == null) {
+            dn.setWarehouseId(warehouseId);
+        }
         outboundMapper.updateById(dn);
 
-        // Update sales order status to SHIPPED
         SalesOrder order = orderMapper.selectById(dn.getOrderId());
         if (order != null) {
             order.setStatus("SHIPPED");
@@ -164,6 +166,7 @@ public class OutboundController {
 
         Set<Long> customerIds = new HashSet<>();
         Set<Long> orderIds = new HashSet<>();
+        Set<Long> warehouseIds = new HashSet<>();
         List<Long> outboundIds = new ArrayList<>();
         for (OutboundOrder o : orders) {
             outboundIds.add(o.getId());
@@ -172,6 +175,9 @@ public class OutboundController {
             }
             if (o.getOrderId() != null) {
                 orderIds.add(o.getOrderId());
+            }
+            if (o.getWarehouseId() != null) {
+                warehouseIds.add(o.getWarehouseId());
             }
         }
 
@@ -194,6 +200,18 @@ public class OutboundController {
                 if (so.getSalesUserId() != null) {
                     salesUserIds.add(so.getSalesUserId());
                 }
+                if (so.getShipFromWarehouseId() != null) {
+                    warehouseIds.add(so.getShipFromWarehouseId());
+                }
+            }
+        }
+
+        Map<Long, String> warehouseNames = new HashMap<>();
+        if (!warehouseIds.isEmpty()) {
+            List<Warehouse> warehouses = warehouseMapper.selectList(
+                    new LambdaQueryWrapper<Warehouse>().in(Warehouse::getId, warehouseIds));
+            for (Warehouse w : warehouses) {
+                warehouseNames.put(w.getId(), w.getName());
             }
         }
 
@@ -225,6 +243,13 @@ public class OutboundController {
                 if (so.getSalesUserId() != null) {
                     o.setSalesUserName(salesUserNames.get(so.getSalesUserId()));
                 }
+            }
+            Long whId = o.getWarehouseId();
+            if (whId == null && so != null) {
+                whId = so.getShipFromWarehouseId();
+            }
+            if (whId != null) {
+                o.setWarehouseName(warehouseNames.get(whId));
             }
             List<OutboundItem> items = itemsByOutbound.getOrDefault(o.getId(), List.of());
             o.setTotalQty(items.stream().mapToInt(OutboundItem::getQty).sum());

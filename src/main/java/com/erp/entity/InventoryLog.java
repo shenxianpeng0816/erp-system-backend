@@ -13,8 +13,9 @@ public class InventoryLog {
     private Long id;
 
     private Long productId;
+    private Long warehouseId;
 
-    /** INBOUND / OUTBOUND / ADJUST */
+    /** INBOUND / OUTBOUND / ADJUST / TRANSFER_OUT / TRANSFER_IN */
     private String type;
 
     /** Positive = stock in, Negative = stock out */
@@ -32,6 +33,9 @@ public class InventoryLog {
     private Long operatorId;
 
     private String remark;
+
+    @TableField(exist = false)
+    private String warehouseName;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

@@ -9,6 +9,9 @@ import com.erp.common.result.Result;
 import com.erp.entity.*;
 import com.erp.mapper.*;
 import com.erp.service.DocSequenceService;
+import com.erp.service.InventoryService;
+import com.erp.service.StockChangeContext;
+import com.erp.service.WarehouseService;
 import com.erp.util.SecurityUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -34,21 +37,27 @@ public class InboundController {
 
     private final InboundOrderMapper inboundMapper;
     private final InboundItemMapper inboundItemMapper;
-    private final InventoryMapper inventoryMapper;
-    private final InventoryLogMapper inventoryLogMapper;
     private final UserMapper userMapper;
     private final DocSequenceService docSequenceService;
+    private final WarehouseService warehouseService;
+    private final InventoryService inventoryService;
+    private final WarehouseMapper warehouseMapper;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
     public Result<PageResult<InboundOrder>> list(
+            @RequestParam(required = false) Long warehouseId,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size) {
         LambdaQueryWrapper<InboundOrder> q = new LambdaQueryWrapper<InboundOrder>()
                 .orderByDesc(InboundOrder::getCreatedAt);
+        if (warehouseId != null) {
+            q.eq(InboundOrder::getWarehouseId, warehouseId);
+        }
         Page<InboundOrder> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
         Page<InboundOrder> result = inboundMapper.selectPage(p, q);
         enrichOperatorNames(result.getRecords());
+        enrichWarehouseNames(result.getRecords());
         return Result.success(PageQuery.from(result));
     }
 
@@ -56,7 +65,10 @@ public class InboundController {
     @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
     public Result<InboundOrder> detail(@PathVariable Long id) {
         InboundOrder order = inboundMapper.selectById(id);
-        if (order != null) enrichOperatorName(order);
+        if (order != null) {
+            enrichOperatorName(order);
+            enrichWarehouseNames(List.of(order));
+        }
         return Result.success(order);
     }
 
@@ -81,9 +93,14 @@ public class InboundController {
         if (!INBOUND_OPERATOR_ROLES.contains(operator.getRole())) {
             throw new BusinessException("Operator must be a warehouse or inbound user");
         }
+        if (req.getWarehouseId() == null) {
+            throw new BusinessException("Target warehouse is required");
+        }
+        warehouseService.requireActive(req.getWarehouseId());
 
         InboundOrder order = new InboundOrder();
         order.setInboundNo(docSequenceService.nextDocNo("IN"));
+        order.setWarehouseId(req.getWarehouseId());
         order.setSupplier(req.getSupplier());
         order.setOperatorId(req.getOperatorId());
         order.setStatus("DRAFT");
@@ -121,35 +138,19 @@ public class InboundController {
         List<InboundItem> items = inboundItemMapper.selectList(
                 new LambdaQueryWrapper<InboundItem>().eq(InboundItem::getInboundId, id));
 
+        Long warehouseId = order.getWarehouseId();
+        if (warehouseId == null) {
+            throw new BusinessException("Inbound order has no warehouse");
+        }
+
         for (InboundItem item : items) {
-            Inventory inv = inventoryMapper.selectOne(
-                    new LambdaQueryWrapper<Inventory>().eq(Inventory::getProductId, item.getProductId()));
-
-            int qtyAfter;
-            if (inv == null) {
-                inv = new Inventory();
-                inv.setProductId(item.getProductId());
-                inv.setQty(item.getQty());
-                inv.setMinQty(0);
-                inventoryMapper.insert(inv);
-                qtyAfter = item.getQty();
-            } else {
-                inv.setQty(inv.getQty() + item.getQty());
-                inventoryMapper.updateById(inv);
-                qtyAfter = inv.getQty();
-            }
-
-            // ── Write inventory log ──────────────────────────────────────────
-            InventoryLog log = new InventoryLog();
-            log.setProductId(item.getProductId());
-            log.setType("INBOUND");
-            log.setQtyChange(item.getQty());            // positive = in
-            log.setQtyAfter(qtyAfter);
-            log.setRefId(id);
-            log.setRefType("INBOUND");
-            log.setOperatorId(operatorId);
-            log.setRemark("Inbound: " + order.getInboundNo());
-            inventoryLogMapper.insert(log);
+            inventoryService.addStock(
+                    warehouseId,
+                    item.getProductId(),
+                    item.getQty(),
+                    new StockChangeContext(
+                            "INBOUND", id, "INBOUND", operatorId,
+                            "Inbound: " + order.getInboundNo()));
         }
 
         order.setStatus("CONFIRMED");
@@ -220,8 +221,13 @@ public class InboundController {
         if (req.getItems() == null || req.getItems().isEmpty()) {
             throw new BusinessException("At least one line item is required");
         }
+        if (req.getWarehouseId() == null) {
+            throw new BusinessException("Target warehouse is required");
+        }
+        warehouseService.requireActive(req.getWarehouseId());
 
         order.setSupplier(req.getSupplier());
+        order.setWarehouseId(req.getWarehouseId());
         order.setOperatorId(req.getOperatorId());
         order.setRemark(req.getRemark());
         if (req.getDocumentUrl() != null && !req.getDocumentUrl().isBlank()) {
@@ -249,6 +255,7 @@ public class InboundController {
 
     private void enrichOperatorNames(List<InboundOrder> list) {
         if (list == null || list.isEmpty()) return;
+        enrichWarehouseNames(list);
         Set<Long> ids = list.stream()
                 .map(InboundOrder::getOperatorId)
                 .filter(Objects::nonNull)
@@ -271,7 +278,9 @@ public class InboundController {
     }
 
     private void enrichOperatorName(InboundOrder order) {
-        if (order == null || order.getOperatorId() == null) return;
+        if (order == null) return;
+        enrichWarehouseNames(List.of(order));
+        if (order.getOperatorId() == null) return;
         User u = userMapper.selectById(order.getOperatorId());
         if (u != null) {
             order.setOperatorName((u.getRealName() != null && !u.getRealName().isBlank())
@@ -280,8 +289,26 @@ public class InboundController {
         }
     }
 
+    private void enrichWarehouseNames(List<InboundOrder> list) {
+        Set<Long> whIds = list.stream()
+                .map(InboundOrder::getWarehouseId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (whIds.isEmpty()) return;
+        Map<Long, String> names = warehouseMapper.selectList(
+                        new LambdaQueryWrapper<Warehouse>().in(Warehouse::getId, whIds))
+                .stream()
+                .collect(Collectors.toMap(Warehouse::getId, Warehouse::getName, (a, b) -> a));
+        for (InboundOrder o : list) {
+            if (o.getWarehouseId() != null) {
+                o.setWarehouseName(names.get(o.getWarehouseId()));
+            }
+        }
+    }
+
     @Data
     public static class CreateInboundRequest {
+        private Long warehouseId;
         private String supplier;
         private String remark;
         /** Must reference an active user with role INBOUND or WAREHOUSE */

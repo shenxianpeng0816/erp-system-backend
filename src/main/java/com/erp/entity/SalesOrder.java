@@ -17,7 +17,11 @@ public class SalesOrder {
     private Long billToCustomerId;
     /** KE / UG / TZ — may differ from ship-to customer country */
     private String countryCode;
+    /** Fulfillment warehouse (ship-from) */
+    private Long shipFromWarehouseId;
 
+    @TableField(exist = false)
+    private String shipFromWarehouseName;
     @TableField(exist = false)
     private String salesUserName;
     @TableField(exist = false)

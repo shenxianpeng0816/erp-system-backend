@@ -6,28 +6,25 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("inbound_order")
-public class InboundOrder {
+@TableName("stock_transfer")
+public class StockTransfer {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String inboundNo;
-    private Long warehouseId;
-    private String supplier;
+    private String transferNo;
+    private Long fromWarehouseId;
+    private Long toWarehouseId;
     private Long operatorId;
-    /** DRAFT / CONFIRMED / CANCELLED / REJECTED */
+    /** DRAFT / CONFIRMED / CANCELLED */
     private String status;
     private String remark;
-    /** Delivery note / BOL image URL path under /uploads/ */
-    @TableField("document_url")
-    private String documentUrl;
+    private LocalDateTime confirmedAt;
 
-    /** Populated on read — not in DB */
+    @TableField(exist = false)
+    private String fromWarehouseName;
+    @TableField(exist = false)
+    private String toWarehouseName;
     @TableField(exist = false)
     private String operatorName;
-    @TableField(exist = false)
-    private String warehouseName;
-
-    private LocalDateTime inboundAt;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

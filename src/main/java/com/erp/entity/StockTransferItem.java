@@ -3,19 +3,17 @@ package com.erp.entity;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
-import java.time.LocalDateTime;
-
 @Data
-@TableName("inventory")
-public class Inventory {
+@TableName("stock_transfer_item")
+public class StockTransferItem {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private Long warehouseId;
+    private Long transferId;
     private Long productId;
     private Integer qty;
-    private Integer minQty;
-    private LocalDateTime lastUpdated;
 
     @TableField(exist = false)
-    private String warehouseName;
+    private String productName;
+    @TableField(exist = false)
+    private String productNo;
 }

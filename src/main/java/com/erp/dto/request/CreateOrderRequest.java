@@ -20,6 +20,9 @@ public class CreateOrderRequest {
     @NotBlank(message = "Country code is required")
     private String countryCode;
 
+    @NotNull(message = "Ship-from warehouse is required")
+    private Long warehouseId;
+
     private String paymentMethod;
     private String priceTerm;
     private Integer validityDays = 30;
