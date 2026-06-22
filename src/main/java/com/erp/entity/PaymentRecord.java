@@ -1,10 +1,10 @@
 package com.erp.entity;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
@@ -14,9 +14,11 @@ public class PaymentRecord {
     private Long id;
     private Long receivableId;
     private BigDecimal amount;
+    private Integer qty;
     private String paymentMethod;
     private String transactionRef;
-    private LocalDate paidAt;
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime paidAt;
     private String remark;
     private Long createdBy;
 

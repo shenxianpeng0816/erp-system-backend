@@ -24,6 +24,7 @@ public class Receivable {
     private Long customerId;
     private BigDecimal amount;
     private BigDecimal receivedAmount;
+    private Integer receivedQty;
     private BigDecimal balance;
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate dueDate;
@@ -33,6 +34,8 @@ public class Receivable {
     private String customerName;
     @TableField(exist = false)
     private String salesUserName;
+    @TableField(exist = false)
+    private Integer unpaidQty;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

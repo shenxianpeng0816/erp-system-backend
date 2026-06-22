@@ -28,7 +28,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -283,8 +285,25 @@ public class FinanceController {
         if (invCheck != null && "CANCELLED".equals(invCheck.getStatus())) {
             throw new BusinessException("Invoice is cancelled");
         }
-        if (req.getAmount() == null || req.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException("Payment amount must be positive");
+        if (req.getQty() == null || req.getQty() <= 0) {
+            throw new BusinessException("Payment quantity must be positive");
+        }
+        if (rec.getUnitPrice() == null || rec.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("Unit price is not set for this receivable");
+        }
+
+        int receivedQty = rec.getReceivedQty() != null ? rec.getReceivedQty() : 0;
+        int totalQty = rec.getQty() != null ? rec.getQty() : 0;
+        int unpaidQty = Math.max(0, totalQty - receivedQty);
+        if (req.getQty() > unpaidQty) {
+            throw new BusinessException("Payment quantity exceeds unpaid quantity (" + unpaidQty + ")");
+        }
+
+        BigDecimal payAmount = rec.getUnitPrice()
+                .multiply(BigDecimal.valueOf(req.getQty()))
+                .setScale(2, RoundingMode.HALF_UP);
+        if (req.getAmount() != null && req.getAmount().compareTo(payAmount) != 0) {
+            throw new BusinessException("Payment amount does not match unit price × quantity");
         }
 
         String paymentMethod = normalizePaymentMethod(req.getPaymentMethod());
@@ -300,21 +319,23 @@ public class FinanceController {
             }
         }
 
-        BigDecimal newReceived = rec.getReceivedAmount().add(req.getAmount());
+        BigDecimal newReceived = rec.getReceivedAmount().add(payAmount);
         if (newReceived.compareTo(rec.getAmount()) > 0)
             throw new BusinessException("Payment exceeds balance");
 
         PaymentRecord payment = new PaymentRecord();
         payment.setReceivableId(id);
-        payment.setAmount(req.getAmount());
+        payment.setQty(req.getQty());
+        payment.setAmount(payAmount);
         payment.setPaymentMethod(paymentMethod);
         payment.setTransactionRef(transactionRef);
-        payment.setPaidAt(req.getPaidAt() != null ? req.getPaidAt() : LocalDate.now());
+        payment.setPaidAt(req.getPaidAt() != null ? req.getPaidAt() : LocalDateTime.now());
         payment.setRemark(req.getRemark() != null && !req.getRemark().isBlank() ? req.getRemark().trim() : null);
         payment.setCreatedBy(SecurityUtil.currentUserId());
         paymentRecordMapper.insert(payment);
 
         rec.setReceivedAmount(newReceived);
+        rec.setReceivedQty(receivedQty + req.getQty());
         rec.setBalance(rec.getAmount().subtract(newReceived));
 
         if (rec.getBalance().compareTo(BigDecimal.ZERO) == 0) {
@@ -449,6 +470,9 @@ public class FinanceController {
                     rec.setSalesUserName(salesUserNames.get(order.getSalesUserId()));
                 }
             }
+            int totalQty = rec.getQty() != null ? rec.getQty() : 0;
+            int receivedQty = rec.getReceivedQty() != null ? rec.getReceivedQty() : 0;
+            rec.setUnpaidQty(Math.max(0, totalQty - receivedQty));
         }
     }
 
@@ -532,9 +556,10 @@ public class FinanceController {
     @Data
     public static class PaymentRequest {
         private BigDecimal amount;
+        private Integer qty;
         private String paymentMethod;
         private String transactionRef;
-        private LocalDate paidAt;
+        private LocalDateTime paidAt;
         private String remark;
     }
 
