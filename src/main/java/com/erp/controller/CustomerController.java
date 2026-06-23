@@ -81,7 +81,7 @@ public class CustomerController {
 
         if (keyword != null && !keyword.isBlank()) {
             String kw = keyword.trim();
-            q.and(w -> w.like(Customer::getName, kw).or().like(Customer::getCustomerNo, kw));
+            q.and(w -> w.likeRight(Customer::getName, kw).or().likeRight(Customer::getCustomerNo, kw));
         }
 
         q.orderByDesc(Customer::getStatus).orderByAsc(Customer::getCustomerNo);

@@ -11,8 +11,8 @@ import java.util.List;
 @Mapper
 public interface CustomerMapper extends BaseMapper<Customer> {
     @Select("<script>"
-            + "SELECT id, customer_no, name, type, phone, is_pickup_point FROM customer WHERE status = 1 "
-            + "AND (name LIKE CONCAT('%',#{keyword},'%') OR customer_no LIKE CONCAT('%',#{keyword},'%')) "
+            + "SELECT id, customer_no, name, type, phone, is_pickup_point, country_code FROM customer WHERE status = 1 "
+            + "AND (name LIKE CONCAT(#{keyword},'%') OR customer_no LIKE CONCAT(#{keyword},'%')) "
             + "<if test='createdByFilter != null'>AND created_by = #{createdByFilter}</if> "
             + "LIMIT 20"
             + "</script>")
