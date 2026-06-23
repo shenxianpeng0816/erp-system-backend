@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilde
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 @Configuration
@@ -16,8 +17,8 @@ public class JacksonConfig {
     @Bean
     public Jackson2ObjectMapperBuilderCustomizer localDateTimeFormatCustomizer() {
         return builder -> {
-            builder.serializers(new LocalDateTimeSerializer(DATETIME_FORMATTER));
-            builder.deserializers(new FlexibleLocalDateTimeDeserializer());
+            builder.serializerByType(LocalDateTime.class, new LocalDateTimeSerializer(DATETIME_FORMATTER));
+            builder.deserializerByType(LocalDateTime.class, new FlexibleLocalDateTimeDeserializer());
         };
     }
 }
