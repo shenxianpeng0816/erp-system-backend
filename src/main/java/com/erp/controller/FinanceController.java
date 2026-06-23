@@ -21,7 +21,6 @@ import com.erp.mapper.ReceivableMapper;
 import com.erp.mapper.SalesOrderMapper;
 import com.erp.mapper.UserMapper;
 import com.erp.util.SecurityUtil;
-import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -645,7 +644,6 @@ public class FinanceController {
         private Integer qty;
         private String paymentMethod;
         private String transactionRef;
-        @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         private LocalDateTime paidAt;
         private String remark;
     }
