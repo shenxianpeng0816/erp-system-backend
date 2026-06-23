@@ -285,18 +285,80 @@ public class FinanceController {
         if (invCheck != null && "CANCELLED".equals(invCheck.getStatus())) {
             throw new BusinessException("Invoice is cancelled");
         }
+
+        int maxQty = maxQtyForPayment(rec, null);
+        PaymentAmount qtyAmount = resolvePaymentQtyAndAmount(rec, req, maxQty);
+
+        String paymentMethod = normalizePaymentMethod(req.getPaymentMethod());
+        String transactionRef = resolveTransactionRef(paymentMethod, req.getTransactionRef());
+        assertTransactionRefUnique(paymentMethod, transactionRef, null);
+
+        PaymentRecord payment = new PaymentRecord();
+        payment.setReceivableId(id);
+        payment.setQty(qtyAmount.qty());
+        payment.setAmount(qtyAmount.amount());
+        payment.setPaymentMethod(paymentMethod);
+        payment.setTransactionRef(transactionRef);
+        payment.setPaidAt(req.getPaidAt() != null ? req.getPaidAt() : LocalDateTime.now());
+        payment.setRemark(req.getRemark() != null && !req.getRemark().isBlank() ? req.getRemark().trim() : null);
+        payment.setCreatedBy(SecurityUtil.currentUserId());
+        paymentRecordMapper.insert(payment);
+
+        recalculateReceivable(id);
+        return Result.success(receivableMapper.selectById(id));
+    }
+
+    /** Update an existing payment record and recalculate receivable totals. */
+    @PutMapping("/receivables/{receivableId}/payments/{paymentId}")
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @Transactional
+    public Result<Receivable> updatePayment(@PathVariable Long receivableId,
+                                            @PathVariable Long paymentId,
+                                            @RequestBody PaymentRequest req) {
+        Receivable rec = receivableMapper.selectById(receivableId);
+        if (rec == null) throw new BusinessException("Receivable not found");
+        if ("CANCELLED".equals(rec.getStatus())) throw new BusinessException("Receivable is cancelled");
+
+        PaymentRecord existing = paymentRecordMapper.selectById(paymentId);
+        if (existing == null || !receivableId.equals(existing.getReceivableId())) {
+            throw new BusinessException("Payment record not found");
+        }
+
+        Invoice invCheck = invoiceMapper.selectById(rec.getInvoiceId());
+        if (invCheck != null && "CANCELLED".equals(invCheck.getStatus())) {
+            throw new BusinessException("Invoice is cancelled");
+        }
+
+        int maxQty = maxQtyForPayment(rec, paymentId);
+        PaymentAmount qtyAmount = resolvePaymentQtyAndAmount(rec, req, maxQty);
+
+        String paymentMethod = normalizePaymentMethod(req.getPaymentMethod());
+        String transactionRef = resolveTransactionRef(paymentMethod, req.getTransactionRef());
+        assertTransactionRefUnique(paymentMethod, transactionRef, paymentId);
+
+        existing.setQty(qtyAmount.qty());
+        existing.setAmount(qtyAmount.amount());
+        existing.setPaymentMethod(paymentMethod);
+        existing.setTransactionRef(transactionRef);
+        existing.setPaidAt(req.getPaidAt() != null ? req.getPaidAt() : existing.getPaidAt());
+        existing.setRemark(req.getRemark() != null && !req.getRemark().isBlank() ? req.getRemark().trim() : null);
+        paymentRecordMapper.updateById(existing);
+
+        recalculateReceivable(receivableId);
+        return Result.success(receivableMapper.selectById(receivableId));
+    }
+
+    private record PaymentAmount(int qty, BigDecimal amount) {}
+
+    private PaymentAmount resolvePaymentQtyAndAmount(Receivable rec, PaymentRequest req, int maxQty) {
         if (req.getQty() == null || req.getQty() <= 0) {
             throw new BusinessException("Payment quantity must be positive");
         }
         if (rec.getUnitPrice() == null || rec.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException("Unit price is not set for this receivable");
         }
-
-        int receivedQty = rec.getReceivedQty() != null ? rec.getReceivedQty() : 0;
-        int totalQty = rec.getQty() != null ? rec.getQty() : 0;
-        int unpaidQty = Math.max(0, totalQty - receivedQty);
-        if (req.getQty() > unpaidQty) {
-            throw new BusinessException("Payment quantity exceeds unpaid quantity (" + unpaidQty + ")");
+        if (req.getQty() > maxQty) {
+            throw new BusinessException("Payment quantity exceeds allowed quantity (" + maxQty + ")");
         }
 
         BigDecimal payAmount = rec.getUnitPrice()
@@ -305,49 +367,73 @@ public class FinanceController {
         if (req.getAmount() != null && req.getAmount().compareTo(payAmount) != 0) {
             throw new BusinessException("Payment amount does not match unit price × quantity");
         }
+        return new PaymentAmount(req.getQty(), payAmount);
+    }
 
-        String paymentMethod = normalizePaymentMethod(req.getPaymentMethod());
-        String transactionRef = resolveTransactionRef(paymentMethod, req.getTransactionRef());
-        if (transactionRef != null) {
-            long duplicateCount = paymentRecordMapper.selectCount(
-                    new LambdaQueryWrapper<PaymentRecord>()
-                            .eq(PaymentRecord::getPaymentMethod, paymentMethod)
-                            .apply("UPPER(TRIM(transaction_ref)) = {0}", transactionRef));
-            if (duplicateCount > 0) {
-                throw new BusinessException(
-                        "Transaction reference already exists for " + paymentMethod + ": " + transactionRef);
+    /** Max qty this payment line may carry (create: unpaid; update: total − other lines). */
+    private int maxQtyForPayment(Receivable rec, Long excludePaymentId) {
+        int totalQty = rec.getQty() != null ? rec.getQty() : 0;
+        List<PaymentRecord> payments = paymentRecordMapper.selectList(
+                new LambdaQueryWrapper<PaymentRecord>().eq(PaymentRecord::getReceivableId, rec.getId()));
+        int otherQty = payments.stream()
+                .filter(p -> excludePaymentId == null || !excludePaymentId.equals(p.getId()))
+                .mapToInt(p -> p.getQty() != null ? p.getQty() : 0)
+                .sum();
+        return Math.max(0, totalQty - otherQty);
+    }
+
+    private void assertTransactionRefUnique(String paymentMethod, String transactionRef, Long excludePaymentId) {
+        if (transactionRef == null) return;
+        LambdaQueryWrapper<PaymentRecord> q = new LambdaQueryWrapper<PaymentRecord>()
+                .eq(PaymentRecord::getPaymentMethod, paymentMethod)
+                .apply("UPPER(TRIM(transaction_ref)) = {0}", transactionRef);
+        if (excludePaymentId != null) {
+            q.ne(PaymentRecord::getId, excludePaymentId);
+        }
+        long duplicateCount = paymentRecordMapper.selectCount(q);
+        if (duplicateCount > 0) {
+            throw new BusinessException(
+                    "Transaction reference already exists for " + paymentMethod + ": " + transactionRef);
+        }
+    }
+
+    private void recalculateReceivable(Long receivableId) {
+        Receivable rec = receivableMapper.selectById(receivableId);
+        if (rec == null) return;
+
+        List<PaymentRecord> payments = paymentRecordMapper.selectList(
+                new LambdaQueryWrapper<PaymentRecord>().eq(PaymentRecord::getReceivableId, receivableId));
+
+        BigDecimal totalReceived = BigDecimal.ZERO;
+        int totalReceivedQty = 0;
+        for (PaymentRecord p : payments) {
+            if (p.getAmount() != null) {
+                totalReceived = totalReceived.add(p.getAmount());
             }
+            totalReceivedQty += p.getQty() != null ? p.getQty() : 0;
         }
 
-        BigDecimal newReceived = rec.getReceivedAmount().add(payAmount);
-        if (newReceived.compareTo(rec.getAmount()) > 0)
-            throw new BusinessException("Payment exceeds balance");
+        if (totalReceived.compareTo(rec.getAmount()) > 0) {
+            throw new BusinessException("Total payments exceed receivable amount");
+        }
+        int totalQty = rec.getQty() != null ? rec.getQty() : 0;
+        if (totalReceivedQty > totalQty) {
+            throw new BusinessException("Total payment quantity exceeds receivable quantity");
+        }
 
-        PaymentRecord payment = new PaymentRecord();
-        payment.setReceivableId(id);
-        payment.setQty(req.getQty());
-        payment.setAmount(payAmount);
-        payment.setPaymentMethod(paymentMethod);
-        payment.setTransactionRef(transactionRef);
-        payment.setPaidAt(req.getPaidAt() != null ? req.getPaidAt() : LocalDateTime.now());
-        payment.setRemark(req.getRemark() != null && !req.getRemark().isBlank() ? req.getRemark().trim() : null);
-        payment.setCreatedBy(SecurityUtil.currentUserId());
-        paymentRecordMapper.insert(payment);
+        rec.setReceivedAmount(totalReceived);
+        rec.setReceivedQty(totalReceivedQty);
+        rec.setBalance(rec.getAmount().subtract(totalReceived));
 
-        rec.setReceivedAmount(newReceived);
-        rec.setReceivedQty(receivedQty + req.getQty());
-        rec.setBalance(rec.getAmount().subtract(newReceived));
-
-        if (rec.getBalance().compareTo(BigDecimal.ZERO) == 0) {
+        if (totalReceived.compareTo(BigDecimal.ZERO) == 0) {
+            rec.setStatus("OUTSTANDING");
+        } else if (rec.getBalance().compareTo(BigDecimal.ZERO) == 0) {
             rec.setStatus("SETTLED");
         } else {
             rec.setStatus("PARTIAL");
         }
         receivableMapper.updateById(rec);
-
-        // Update invoice status
         updateInvoiceStatus(rec.getInvoiceId());
-        return Result.success(rec);
     }
 
     private void enrichInvoices(List<Invoice> invoices) {
@@ -516,11 +602,14 @@ public class FinanceController {
                 new LambdaQueryWrapper<Receivable>().eq(Receivable::getInvoiceId, invoiceId));
         boolean allSettled = recs.stream().allMatch(r -> "SETTLED".equals(r.getStatus()));
         boolean anyPartial = recs.stream().anyMatch(r -> "PARTIAL".equals(r.getStatus()));
+        boolean anyReceived = recs.stream().anyMatch(r ->
+                r.getReceivedAmount() != null && r.getReceivedAmount().compareTo(BigDecimal.ZERO) > 0);
 
         Invoice inv = invoiceMapper.selectById(invoiceId);
         if (inv == null) return;
         if (allSettled) inv.setStatus("PAID");
-        else if (anyPartial) inv.setStatus("PARTIAL");
+        else if (anyPartial || anyReceived) inv.setStatus("PARTIAL");
+        else inv.setStatus("PENDING");
         invoiceMapper.updateById(inv);
     }
 
@@ -538,17 +627,13 @@ public class FinanceController {
         return trimmed;
     }
 
-    private static boolean requiresTransactionRef(String paymentMethod) {
-        return !METHOD_CASH.equalsIgnoreCase(paymentMethod);
-    }
-
-    /** Returns null for Cash; otherwise normalized transaction ref (uppercase, trimmed). */
+    /** Returns null when blank; Cash always null; otherwise normalized uppercase ref. */
     private static String resolveTransactionRef(String paymentMethod, String rawRef) {
-        if (!requiresTransactionRef(paymentMethod)) {
+        if (METHOD_CASH.equalsIgnoreCase(paymentMethod)) {
             return null;
         }
         if (rawRef == null || rawRef.isBlank()) {
-            throw new BusinessException("Transaction reference is required for " + paymentMethod);
+            return null;
         }
         return rawRef.trim().toUpperCase();
     }
