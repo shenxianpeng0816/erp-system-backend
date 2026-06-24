@@ -31,6 +31,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -152,6 +153,7 @@ public class FinanceController {
         List<Receivable> recs = receivableMapper.selectList(receivableQuery(
                 status, customerId, createdFrom, createdTo, customerName, salesUserName, productName, orderNo));
         enrichReceivables(recs);
+        enrichPaymentRemarks(recs);
         return Result.success(recs);
     }
 
@@ -563,6 +565,43 @@ public class FinanceController {
             int totalQty = rec.getQty() != null ? rec.getQty() : 0;
             int receivedQty = rec.getReceivedQty() != null ? rec.getReceivedQty() : 0;
             rec.setUnpaidQty(Math.max(0, totalQty - receivedQty));
+        }
+    }
+
+    private void enrichPaymentRemarks(List<Receivable> recs) {
+        if (recs == null || recs.isEmpty()) {
+            return;
+        }
+        Set<Long> receivableIds = new HashSet<>();
+        for (Receivable rec : recs) {
+            if (rec.getId() != null) {
+                receivableIds.add(rec.getId());
+            }
+        }
+        if (receivableIds.isEmpty()) {
+            return;
+        }
+        List<PaymentRecord> payments = paymentRecordMapper.selectList(
+                new LambdaQueryWrapper<PaymentRecord>()
+                        .in(PaymentRecord::getReceivableId, receivableIds));
+        Map<Long, List<String>> remarksByReceivable = new HashMap<>();
+        for (PaymentRecord payment : payments) {
+            if (payment.getReceivableId() == null) {
+                continue;
+            }
+            String remark = payment.getRemark();
+            if (remark == null || remark.isBlank()) {
+                continue;
+            }
+            remarksByReceivable
+                    .computeIfAbsent(payment.getReceivableId(), k -> new ArrayList<>())
+                    .add(remark.trim());
+        }
+        for (Receivable rec : recs) {
+            List<String> remarks = remarksByReceivable.get(rec.getId());
+            if (remarks != null && !remarks.isEmpty()) {
+                rec.setPaymentRemarks(String.join(";", remarks));
+            }
         }
     }
 

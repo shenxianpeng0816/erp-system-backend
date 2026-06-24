@@ -38,6 +38,9 @@ public class Receivable {
     private String salesUserName;
     @TableField(exist = false)
     private Integer unpaidQty;
+    /** Semicolon-joined remarks from related payment records (export / enrichment). */
+    @TableField(exist = false)
+    private String paymentRemarks;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
