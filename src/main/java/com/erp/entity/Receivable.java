@@ -33,6 +33,8 @@ public class Receivable {
     @TableField(exist = false)
     private String customerName;
     @TableField(exist = false)
+    private String shopName;
+    @TableField(exist = false)
     private String salesUserName;
     @TableField(exist = false)
     private Integer unpaidQty;

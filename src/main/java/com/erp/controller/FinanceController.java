@@ -511,12 +511,12 @@ public class FinanceController {
             }
         }
 
-        Map<Long, String> customerNames = new HashMap<>();
+        Map<Long, Customer> customerMap = new HashMap<>();
         if (!customerIds.isEmpty()) {
             List<Customer> customers = customerMapper.selectList(
                     new LambdaQueryWrapper<Customer>().in(Customer::getId, customerIds));
             for (Customer c : customers) {
-                customerNames.put(c.getId(), c.getName());
+                customerMap.put(c.getId(), c);
             }
         }
 
@@ -545,7 +545,11 @@ public class FinanceController {
 
         for (Receivable rec : recs) {
             if (rec.getCustomerId() != null) {
-                rec.setCustomerName(customerNames.get(rec.getCustomerId()));
+                Customer customer = customerMap.get(rec.getCustomerId());
+                if (customer != null) {
+                    rec.setCustomerName(customer.getName());
+                    rec.setShopName(customer.getShopName());
+                }
             }
             SalesOrder order = rec.getOrderId() != null ? orderMap.get(rec.getOrderId()) : null;
             if (order != null) {
