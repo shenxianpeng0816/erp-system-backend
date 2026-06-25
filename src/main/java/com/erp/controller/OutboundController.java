@@ -80,6 +80,36 @@ public class OutboundController {
         return Result.success(PageQuery.from(result));
     }
 
+    /** Export all outbound orders matching list filters (no pagination). */
+    @GetMapping("/export")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    public Result<List<OutboundOrder>> export(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String orderNo,
+            @RequestParam(required = false) Long warehouseId) {
+        LambdaQueryWrapper<OutboundOrder> q = new LambdaQueryWrapper<OutboundOrder>()
+                .orderByDesc(OutboundOrder::getCreatedAt);
+        if (warehouseId != null) {
+            q.eq(OutboundOrder::getWarehouseId, warehouseId);
+        }
+        if (keyword != null && !keyword.isBlank()) {
+            q.like(OutboundOrder::getOutboundNo, keyword.trim());
+        }
+        if (orderNo != null && !orderNo.isBlank()) {
+            List<SalesOrder> orders = orderMapper.selectList(
+                    new LambdaQueryWrapper<SalesOrder>()
+                            .likeRight(SalesOrder::getOrderNo, orderNo.trim()));
+            if (orders.isEmpty()) {
+                return Result.success(List.of());
+            }
+            q.in(OutboundOrder::getOrderId,
+                    orders.stream().map(SalesOrder::getId).toList());
+        }
+        List<OutboundOrder> list = outboundMapper.selectList(q);
+        enrichOutboundOrders(list);
+        return Result.success(list);
+    }
+
     @GetMapping("/{id}")
     public Result<OutboundOrder> detail(@PathVariable Long id) {
         OutboundOrder dn = outboundMapper.selectById(id);

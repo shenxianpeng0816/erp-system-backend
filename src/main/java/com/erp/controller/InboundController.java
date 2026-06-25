@@ -61,6 +61,20 @@ public class InboundController {
         return Result.success(PageQuery.from(result));
     }
 
+    /** Export all inbound orders (no pagination). */
+    @GetMapping("/export")
+    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
+    public Result<List<InboundOrder>> export(@RequestParam(required = false) Long warehouseId) {
+        LambdaQueryWrapper<InboundOrder> q = new LambdaQueryWrapper<InboundOrder>()
+                .orderByDesc(InboundOrder::getCreatedAt);
+        if (warehouseId != null) {
+            q.eq(InboundOrder::getWarehouseId, warehouseId);
+        }
+        List<InboundOrder> list = inboundMapper.selectList(q);
+        enrichOperatorNames(list);
+        return Result.success(list);
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
     public Result<InboundOrder> detail(@PathVariable Long id) {
