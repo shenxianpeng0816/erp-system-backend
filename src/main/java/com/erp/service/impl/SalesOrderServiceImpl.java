@@ -282,11 +282,13 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             }
         }
         Map<Long, String> customerNames = new HashMap<>();
+        Map<Long, String> shipToShopNames = new HashMap<>();
         if (!customerIds.isEmpty()) {
             List<Customer> customers = customerMapper.selectList(
                     new LambdaQueryWrapper<Customer>().in(Customer::getId, customerIds));
             for (Customer c : customers) {
                 customerNames.put(c.getId(), c.getName());
+                shipToShopNames.put(c.getId(), customerShopDisplayName(c));
             }
         }
         Map<Long, String> salesUserNames = new HashMap<>();
@@ -311,7 +313,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                 o.setSalesUserName(salesUserNames.get(o.getSalesUserId()));
             }
             if (o.getShipToCustomerId() != null) {
-                o.setShipToCustomerName(customerNames.get(o.getShipToCustomerId()));
+                o.setShipToCustomerName(shipToShopNames.get(o.getShipToCustomerId()));
             }
             if (o.getBillToCustomerId() != null) {
                 o.setBillToCustomerName(customerNames.get(o.getBillToCustomerId()));
@@ -672,6 +674,14 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             return u.getRealName().trim();
         }
         return u.getUsername() != null ? u.getUsername() : "";
+    }
+
+    /** Ship-to list/detail label: prefer shop/company name, fall back to owner name. */
+    private static String customerShopDisplayName(Customer c) {
+        if (c.getShopName() != null && !c.getShopName().isBlank()) {
+            return c.getShopName().trim();
+        }
+        return c.getName() != null ? c.getName().trim() : "";
     }
 
     private SalesOrder getAndValidateOwner(Long orderId) {
