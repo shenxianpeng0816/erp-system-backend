@@ -11,6 +11,7 @@ public class ReceivableFilterParams {
     private LocalDateTime createdFrom;
     private LocalDateTime createdToExclusive;
     private String customerName;
+    private String shopName;
     private String salesUserName;
     private String productName;
     private String orderNo;

@@ -39,6 +39,13 @@ public interface ReceivableMapper extends BaseMapper<Receivable> {
                   AND c.name LIKE CONCAT(#{p.customerName}, '%')
               )
             </if>
+            <if test="p.shopName != null and p.shopName != ''">
+              AND EXISTS (
+                SELECT 1 FROM customer c
+                WHERE c.id = r.customer_id
+                  AND c.shop_name LIKE CONCAT(#{p.shopName}, '%')
+              )
+            </if>
             <if test="p.salesUserName != null and p.salesUserName != ''">
               AND r.order_id IN (
                 SELECT o.id FROM sales_order o

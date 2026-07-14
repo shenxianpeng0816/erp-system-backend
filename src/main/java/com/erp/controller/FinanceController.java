@@ -102,11 +102,12 @@ public class FinanceController {
             @RequestParam(required = false) LocalDate createdFrom,
             @RequestParam(required = false) LocalDate createdTo,
             @RequestParam(required = false) String customerName,
+            @RequestParam(required = false) String shopName,
             @RequestParam(required = false) String salesUserName,
             @RequestParam(required = false) String productName,
             @RequestParam(required = false) String orderNo) {
         ReceivableFilterParams params = toFilterParams(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName, orderNo,
+                status, customerId, createdFrom, createdTo, customerName, shopName, salesUserName, productName, orderNo,
                 status == null);
         ReceivableSummaryAgg agg = receivableMapper.summarizeReceivables(params);
         ReceivableSummary summary = new ReceivableSummary();
@@ -124,13 +125,14 @@ public class FinanceController {
             @RequestParam(required = false) LocalDate createdFrom,
             @RequestParam(required = false) LocalDate createdTo,
             @RequestParam(required = false) String customerName,
+            @RequestParam(required = false) String shopName,
             @RequestParam(required = false) String salesUserName,
             @RequestParam(required = false) String productName,
             @RequestParam(required = false) String orderNo,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size) {
         LambdaQueryWrapper<Receivable> q = receivableQuery(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName, orderNo);
+                status, customerId, createdFrom, createdTo, customerName, shopName, salesUserName, productName, orderNo);
 
         Page<Receivable> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
         Page<Receivable> result = receivableMapper.selectPage(p, q);
@@ -147,11 +149,12 @@ public class FinanceController {
             @RequestParam(required = false) LocalDate createdFrom,
             @RequestParam(required = false) LocalDate createdTo,
             @RequestParam(required = false) String customerName,
+            @RequestParam(required = false) String shopName,
             @RequestParam(required = false) String salesUserName,
             @RequestParam(required = false) String productName,
             @RequestParam(required = false) String orderNo) {
         List<Receivable> recs = receivableMapper.selectList(receivableQuery(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName, orderNo));
+                status, customerId, createdFrom, createdTo, customerName, shopName, salesUserName, productName, orderNo));
         enrichReceivables(recs);
         enrichPaymentRemarks(recs);
         return Result.success(recs);
@@ -163,11 +166,12 @@ public class FinanceController {
             LocalDate createdFrom,
             LocalDate createdTo,
             String customerName,
+            String shopName,
             String salesUserName,
             String productName,
             String orderNo) {
         ReceivableFilterParams params = toFilterParams(
-                status, customerId, createdFrom, createdTo, customerName, salesUserName, productName, orderNo, null);
+                status, customerId, createdFrom, createdTo, customerName, shopName, salesUserName, productName, orderNo, null);
         LambdaQueryWrapper<Receivable> q = new LambdaQueryWrapper<Receivable>()
                 .orderByDesc(Receivable::getCreatedAt);
         applyReceivableFilters(q, params);
@@ -180,6 +184,7 @@ public class FinanceController {
             LocalDate createdFrom,
             LocalDate createdTo,
             String customerName,
+            String shopName,
             String salesUserName,
             String productName,
             String orderNo,
@@ -195,6 +200,9 @@ public class FinanceController {
         }
         if (customerName != null && !customerName.isBlank()) {
             params.setCustomerName(customerName.trim());
+        }
+        if (shopName != null && !shopName.isBlank()) {
+            params.setShopName(shopName.trim());
         }
         if (salesUserName != null && !salesUserName.isBlank()) {
             params.setSalesUserName(salesUserName.trim());
@@ -233,6 +241,15 @@ public class FinanceController {
                           AND c.name LIKE {0}
                     )
                     """, params.getCustomerName() + "%");
+        }
+        if (params.getShopName() != null) {
+            q.apply("""
+                    EXISTS (
+                        SELECT 1 FROM customer c
+                        WHERE c.id = receivable.customer_id
+                          AND c.shop_name LIKE {0}
+                    )
+                    """, params.getShopName() + "%");
         }
         if (params.getSalesUserName() != null) {
             String prefix = params.getSalesUserName() + "%";
