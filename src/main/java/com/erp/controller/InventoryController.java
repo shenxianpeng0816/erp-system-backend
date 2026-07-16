@@ -93,12 +93,25 @@ public class InventoryController {
     @GetMapping("/transaction-logs")
     @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND','FINANCE')")
     public Result<List<InventoryLog>> transactionLogs(
-            @RequestParam(required = false) Long warehouseId) {
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) String productName) {
         LambdaQueryWrapper<InventoryLog> q = new LambdaQueryWrapper<InventoryLog>()
                 .orderByDesc(InventoryLog::getCreatedAt)
                 .last("LIMIT 3000");
         if (warehouseId != null) {
             q.eq(InventoryLog::getWarehouseId, warehouseId);
+        }
+        if (productName != null && !productName.isBlank()) {
+            String keyword = productName.trim();
+            List<Long> productIds = productMapper.selectList(
+                            new LambdaQueryWrapper<Product>().like(Product::getName, keyword))
+                    .stream()
+                    .map(Product::getId)
+                    .toList();
+            if (productIds.isEmpty()) {
+                return Result.success(List.of());
+            }
+            q.in(InventoryLog::getProductId, productIds);
         }
         List<InventoryLog> logs = inventoryLogMapper.selectList(q);
         enrichLogWarehouseNames(logs);
