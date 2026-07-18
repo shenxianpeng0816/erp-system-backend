@@ -1,6 +1,7 @@
 package com.erp.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.erp.common.enums.CountryEnum;
 import com.erp.common.exception.BusinessException;
 import com.erp.dto.request.CreateWarehouseRequest;
 import com.erp.entity.Warehouse;
@@ -11,13 +12,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class WarehouseServiceImpl implements WarehouseService {
-
-    private static final Set<String> ALLOWED_COUNTRY_CODES = Set.of("KE", "UG", "TZ");
 
     private final WarehouseMapper warehouseMapper;
 
@@ -151,10 +149,9 @@ public class WarehouseServiceImpl implements WarehouseService {
         if (countryCode == null || countryCode.isBlank()) {
             throw new BusinessException("Country code is required");
         }
-        String cc = countryCode.trim().toUpperCase();
-        if (!ALLOWED_COUNTRY_CODES.contains(cc)) {
-            throw new BusinessException("Invalid country code. Allowed: KE, UG, TZ");
-        }
-        return cc;
+        return CountryEnum.ofCountryCode(countryCode)
+                .map(CountryEnum::getCountryCode)
+                .orElseThrow(() -> new BusinessException(
+                        "Invalid country code. Allowed: " + CountryEnum.allowedCodesMessage()));
     }
 }

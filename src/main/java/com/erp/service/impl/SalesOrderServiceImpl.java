@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.erp.common.dto.PageQuery;
 import com.erp.common.dto.PageResult;
+import com.erp.common.enums.CountryEnum;
 import com.erp.common.exception.BusinessException;
 import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CancelOrderRequest;
@@ -33,8 +34,6 @@ import java.util.Set;
 @Service
 @RequiredArgsConstructor
 public class SalesOrderServiceImpl implements SalesOrderService {
-
-    private static final Set<String> ALLOWED_COUNTRY_CODES = Set.of("KE", "UG", "TZ");
 
     private final SalesOrderMapper orderMapper;
     private final SalesOrderItemMapper itemMapper;
@@ -662,11 +661,10 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         if (countryCode == null || countryCode.isBlank()) {
             throw new BusinessException("Country code is required");
         }
-        String cc = countryCode.trim().toUpperCase();
-        if (!ALLOWED_COUNTRY_CODES.contains(cc)) {
-            throw new BusinessException("Invalid country code. Allowed: KE, UG, TZ");
-        }
-        return cc;
+        return CountryEnum.ofCountryCode(countryCode)
+                .map(CountryEnum::getCountryCode)
+                .orElseThrow(() -> new BusinessException(
+                        "Invalid country code. Allowed: " + CountryEnum.allowedCodesMessage()));
     }
 
     private static String userDisplayName(User u) {
@@ -742,14 +740,9 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         return "Product #" + item.getProductId();
     }
 
-    /** Invoice dates follow the sales order country wall clock (KE/UG/TZ), not server default zone. */
+    /** Invoice dates follow the sales order country wall clock, not server default zone. */
     private static LocalDate businessLocalDate(SalesOrder order) {
-        String cc = order.getCountryCode() != null ? order.getCountryCode().trim().toUpperCase() : "KE";
-        ZoneId zone = switch (cc) {
-            case "UG" -> ZoneId.of("Africa/Kampala");
-            case "TZ" -> ZoneId.of("Africa/Dar_es_Salaam");
-            default -> ZoneId.of("Africa/Nairobi");
-        };
+        ZoneId zone = ZoneId.of(CountryEnum.ofCountryCodeOrDefault(order.getCountryCode()).getTimeZoneCode());
         return LocalDate.now(zone);
     }
 
