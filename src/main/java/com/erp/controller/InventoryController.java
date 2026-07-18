@@ -1,6 +1,7 @@
 package com.erp.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.erp.common.enums.CountryEnum;
 import com.erp.common.exception.BusinessException;
 import com.erp.common.result.Result;
 import com.erp.entity.Inventory;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -33,11 +35,17 @@ public class InventoryController {
     private final WarehouseMapper warehouseMapper;
 
     @GetMapping
-    public Result<List<Inventory>> list(@RequestParam(required = false) Long warehouseId) {
+    public Result<List<Inventory>> list(
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) String countryCode) {
         LambdaQueryWrapper<Inventory> q = new LambdaQueryWrapper<Inventory>()
                 .orderByAsc(Inventory::getProductId);
         if (warehouseId != null) {
             q.eq(Inventory::getWarehouseId, warehouseId);
+        }
+        String cc = normalizeOptionalCountry(countryCode);
+        if (cc != null) {
+            q.eq(Inventory::getCountryCode, cc);
         }
         List<Inventory> rows = inventoryMapper.selectList(q);
         enrichWarehouseNames(rows);
@@ -47,11 +55,17 @@ public class InventoryController {
     /** Products with stock below minimum threshold */
     @GetMapping("/alerts")
     @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
-    public Result<List<Inventory>> alerts(@RequestParam(required = false) Long warehouseId) {
+    public Result<List<Inventory>> alerts(
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) String countryCode) {
         LambdaQueryWrapper<Inventory> q = new LambdaQueryWrapper<Inventory>()
                 .apply("qty <= min_qty");
         if (warehouseId != null) {
             q.eq(Inventory::getWarehouseId, warehouseId);
+        }
+        String cc = normalizeOptionalCountry(countryCode);
+        if (cc != null) {
+            q.eq(Inventory::getCountryCode, cc);
         }
         List<Inventory> rows = inventoryMapper.selectList(q);
         enrichWarehouseNames(rows);
@@ -119,11 +133,34 @@ public class InventoryController {
     }
 
     @GetMapping("/products")
-    public Result<List<Product>> products(@RequestParam(required = false) Long warehouseId) {
-        List<Product> products = productMapper.selectList(
-                new LambdaQueryWrapper<Product>().eq(Product::getStatus, 1));
+    public Result<List<Product>> products(
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) String countryCode) {
+        String cc = resolveProductCountryFilter(warehouseId, countryCode);
+        LambdaQueryWrapper<Product> q = new LambdaQueryWrapper<Product>()
+                .eq(Product::getStatus, 1)
+                .orderByAsc(Product::getProductNo);
+        if (cc != null) {
+            q.eq(Product::getCountryCode, cc);
+        }
+        List<Product> products = productMapper.selectList(q);
         enrichProductStock(products, warehouseId);
         return Result.success(products);
+    }
+
+    private String resolveProductCountryFilter(Long warehouseId, String countryCode) {
+        String cc = normalizeOptionalCountry(countryCode);
+        if (cc != null) {
+            return cc;
+        }
+        if (warehouseId == null) {
+            return null;
+        }
+        Warehouse wh = warehouseMapper.selectById(warehouseId);
+        if (wh == null || wh.getCountryCode() == null || wh.getCountryCode().isBlank()) {
+            return null;
+        }
+        return normalizeOptionalCountry(wh.getCountryCode());
     }
 
     private void enrichProductStock(List<Product> products, Long warehouseId) {
@@ -190,6 +227,12 @@ public class InventoryController {
     @PostMapping("/products")
     @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
     public Result<Product> createProduct(@RequestBody Product product) {
+        product.setCountryCode(requireCountryCode(product.getCountryCode()));
+        if (product.getName() == null || product.getName().isBlank()) {
+            throw new BusinessException("Product name is required");
+        }
+        product.setName(product.getName().trim());
+        assertUniqueCountryName(product.getCountryCode(), product.getName(), null);
         product.setStatus(1);
         productMapper.insert(product);
         return Result.success(product);
@@ -201,15 +244,55 @@ public class InventoryController {
         Product existing = productMapper.selectById(id);
         if (existing == null) throw new BusinessException("Product not found");
         if (body.getProductNo() != null) existing.setProductNo(body.getProductNo());
-        if (body.getName() != null) existing.setName(body.getName());
+        if (body.getName() != null) {
+            if (body.getName().isBlank()) {
+                throw new BusinessException("Product name is required");
+            }
+            existing.setName(body.getName().trim());
+        }
         if (body.getSpec() != null) existing.setSpec(body.getSpec());
         if (body.getCategory() != null) existing.setCategory(body.getCategory());
         if (body.getUnit() != null) existing.setUnit(body.getUnit());
         if (body.getUnitPrice() != null) existing.setUnitPrice(body.getUnitPrice());
+        if (body.getCountryCode() != null && !body.getCountryCode().isBlank()) {
+            String nextCc = requireCountryCode(body.getCountryCode());
+            String prevCc = existing.getCountryCode() != null
+                    ? existing.getCountryCode().trim().toUpperCase(Locale.ROOT) : "";
+            if (!nextCc.equals(prevCc)) {
+                long positiveRows = inventoryMapper.selectCount(
+                        new LambdaQueryWrapper<Inventory>()
+                                .eq(Inventory::getProductId, id)
+                                .gt(Inventory::getQty, 0));
+                if (positiveRows > 0) {
+                    throw new BusinessException(
+                            "Cannot change product country while stock remains. Clear inventory first.");
+                }
+            }
+            existing.setCountryCode(nextCc);
+        }
         if (body.getImageUrl() != null) existing.setImageUrl(body.getImageUrl());
         if (body.getRemark() != null) existing.setRemark(body.getRemark());
+        assertUniqueCountryName(existing.getCountryCode(), existing.getName(), id);
         productMapper.updateById(existing);
         return Result.success(existing);
+    }
+
+    /** country_code + name must be unique among active products. */
+    private void assertUniqueCountryName(String countryCode, String name, Long excludeId) {
+        if (countryCode == null || name == null || name.isBlank()) {
+            return;
+        }
+        LambdaQueryWrapper<Product> q = new LambdaQueryWrapper<Product>()
+                .eq(Product::getCountryCode, countryCode)
+                .eq(Product::getName, name.trim());
+        if (excludeId != null) {
+            q.ne(Product::getId, excludeId);
+        }
+        Long count = productMapper.selectCount(q);
+        if (count != null && count > 0) {
+            throw new BusinessException(
+                    "Product name \"" + name.trim() + "\" already exists for country " + countryCode);
+        }
     }
 
     /**
@@ -230,5 +313,22 @@ public class InventoryController {
         }
         productMapper.deleteById(id);
         return Result.success();
+    }
+
+    private static String requireCountryCode(String countryCode) {
+        return CountryEnum.ofCountryCode(countryCode)
+                .map(CountryEnum::getCountryCode)
+                .orElseThrow(() -> new BusinessException(
+                        "Invalid country code. Allowed: " + CountryEnum.allowedCodesMessage()));
+    }
+
+    private static String normalizeOptionalCountry(String countryCode) {
+        if (countryCode == null || countryCode.isBlank()) {
+            return null;
+        }
+        return CountryEnum.ofCountryCode(countryCode)
+                .map(CountryEnum::getCountryCode)
+                .orElseThrow(() -> new BusinessException(
+                        "Invalid country code. Allowed: " + CountryEnum.allowedCodesMessage()));
     }
 }

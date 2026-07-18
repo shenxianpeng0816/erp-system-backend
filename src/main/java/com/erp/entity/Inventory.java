@@ -11,6 +11,8 @@ public class Inventory {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long warehouseId;
+    /** Denormalized from warehouse.country_code for filtering */
+    private String countryCode;
     private Long productId;
     private Integer qty;
     private Integer minQty;

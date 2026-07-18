@@ -85,7 +85,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
         order.setStatus("DRAFT");
 
-        validateOrderItemsStock(req.getItems(), warehouse.getId());
+        validateOrderItemsStock(req.getItems(), warehouse.getId(), order.getCountryCode());
 
         BigDecimal total = BigDecimal.ZERO;
         orderMapper.insert(order);
@@ -488,7 +488,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         itemMapper.delete(
                 new LambdaQueryWrapper<SalesOrderItem>().eq(SalesOrderItem::getOrderId, orderId));
 
-        validateOrderItemsStock(req.getItems(), warehouse.getId());
+        validateOrderItemsStock(req.getItems(), warehouse.getId(), order.getCountryCode());
 
         BigDecimal total = BigDecimal.ZERO;
         for (CreateOrderRequest.OrderItemRequest i : req.getItems()) {
@@ -625,13 +625,15 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
-    private void validateOrderItemsStock(List<CreateOrderRequest.OrderItemRequest> items, Long warehouseId) {
+    private void validateOrderItemsStock(
+            List<CreateOrderRequest.OrderItemRequest> items, Long warehouseId, String orderCountryCode) {
         if (items == null || items.isEmpty()) {
             throw new BusinessException("Order must contain at least one line item");
         }
         if (warehouseId == null) {
             throw new BusinessException("Ship-from warehouse is required");
         }
+        String orderCc = normalizeCountryCode(orderCountryCode);
         Warehouse warehouse = warehouseService.requireActive(warehouseId);
         for (CreateOrderRequest.OrderItemRequest i : items) {
             if (i.getProductId() == null) {
@@ -641,9 +643,17 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                 throw new BusinessException("Each line item must have quantity at least 1");
             }
             Product product = productMapper.selectById(i.getProductId());
-            String productLabel = product != null
-                    ? product.getProductNo() + " — " + product.getName()
-                    : "Product #" + i.getProductId();
+            if (product == null) {
+                throw new BusinessException("Product #" + i.getProductId() + " not found");
+            }
+            String productLabel = product.getProductNo() + " — " + product.getName();
+            String productCc = product.getCountryCode() != null
+                    ? product.getCountryCode().trim().toUpperCase() : "";
+            if (!orderCc.equals(productCc)) {
+                throw new BusinessException(
+                        "Product " + productLabel + " is for country " + productCc
+                                + " but order country is " + orderCc);
+            }
 
             int available = inventoryService.getAvailableQty(warehouseId, i.getProductId());
             if (available <= 0) {

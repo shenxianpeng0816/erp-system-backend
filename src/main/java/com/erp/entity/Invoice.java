@@ -34,6 +34,10 @@ public class Invoice {
     @TableField(exist = false)
     private String salesUserName;
 
+    /** From related sales_order.country_code — for currency display */
+    @TableField(exist = false)
+    private String countryCode;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)

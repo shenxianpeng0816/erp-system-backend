@@ -17,6 +17,8 @@ public class Product {
     private String category;
     private String unit;
     private BigDecimal unitPrice;
+    /** ISO 3166-1 alpha-2 — pricing currency from CountryEnum */
+    private String countryCode;
     private String imageUrl;
     private String remark;
 

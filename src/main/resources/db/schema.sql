@@ -86,13 +86,16 @@ CREATE TABLE IF NOT EXISTS `product` (
     `category`     VARCHAR(100) DEFAULT NULL,
     `unit`         VARCHAR(20)  NOT NULL DEFAULT 'pcs',
     `unit_price`   DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    `country_code` VARCHAR(2)   NOT NULL DEFAULT 'KE' COMMENT 'ISO 3166-1 alpha-2; pricing currency from CountryEnum',
     `image_url`    VARCHAR(500) DEFAULT NULL,
     `remark`       TEXT         DEFAULT NULL,
     `status`       TINYINT     NOT NULL DEFAULT 1,
     `created_at`   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_product_no` (`product_no`)
+    UNIQUE KEY `uk_product_country_name` (`country_code`, `name`),
+    KEY `idx_product_country` (`country_code`),
+    KEY `idx_product_no` (`product_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Products';
 
 -- ============================================================
@@ -100,12 +103,16 @@ CREATE TABLE IF NOT EXISTS `product` (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `inventory` (
     `id`           BIGINT       NOT NULL AUTO_INCREMENT,
+    `warehouse_id` BIGINT       NOT NULL,
+    `country_code` VARCHAR(2)   NOT NULL COMMENT 'denormalized from warehouse.country_code',
     `product_id`   BIGINT       NOT NULL,
     `qty`          INT          NOT NULL DEFAULT 0,
     `min_qty`      INT          NOT NULL DEFAULT 0 COMMENT 'alert threshold',
     `last_updated` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_product` (`product_id`),
+    UNIQUE KEY `uk_warehouse_product` (`warehouse_id`, `product_id`),
+    KEY `idx_warehouse_id` (`warehouse_id`),
+    KEY `idx_inventory_country` (`country_code`),
     CONSTRAINT `fk_inventory_product` FOREIGN KEY (`product_id`) REFERENCES `product` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Inventory';
 

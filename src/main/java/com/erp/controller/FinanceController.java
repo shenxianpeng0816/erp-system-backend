@@ -506,6 +506,7 @@ public class FinanceController {
                 SalesOrder order = orderMap.get(inv.getOrderId());
                 if (order != null) {
                     inv.setOrderNo(order.getOrderNo());
+                    inv.setCountryCode(order.getCountryCode());
                     if (order.getSalesUserId() != null) {
                         inv.setSalesUserName(salesUserNames.get(order.getSalesUserId()));
                     }
@@ -575,6 +576,7 @@ public class FinanceController {
                 if (rec.getOrderNo() == null || rec.getOrderNo().isBlank()) {
                     rec.setOrderNo(order.getOrderNo());
                 }
+                rec.setCountryCode(order.getCountryCode());
                 if (order.getSalesUserId() != null) {
                     rec.setSalesUserName(salesUserNames.get(order.getSalesUserId()));
                 }

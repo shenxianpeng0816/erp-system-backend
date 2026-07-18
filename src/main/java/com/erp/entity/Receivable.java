@@ -36,6 +36,9 @@ public class Receivable {
     private String shopName;
     @TableField(exist = false)
     private String salesUserName;
+    /** From related sales_order.country_code — for currency display */
+    @TableField(exist = false)
+    private String countryCode;
     @TableField(exist = false)
     private Integer unpaidQty;
     /** Semicolon-joined remarks from related payment records (export / enrichment). */
