@@ -42,7 +42,7 @@ public class WarehouseController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:warehouse:add')")
     public Result<Warehouse> create(@Valid @RequestBody CreateWarehouseRequest req) {
         return Result.success(warehouseService.create(req));
     }

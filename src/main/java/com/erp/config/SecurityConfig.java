@@ -1,6 +1,7 @@
 package com.erp.config;
 
 import com.erp.mapper.UserMapper;
+import com.erp.service.SysPermissionService;
 import com.erp.util.JwtUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
@@ -34,6 +35,7 @@ public class SecurityConfig {
 
     private final JwtUtil jwtUtil;
     private final UserMapper userMapper;
+    private final SysPermissionService permissionService;
     private final ObjectMapper objectMapper;
 
     @Bean
@@ -46,6 +48,7 @@ public class SecurityConfig {
         return username -> {
             var user = userMapper.findByUsername(username);
             if (user == null) throw new UsernameNotFoundException("User not found: " + username);
+            permissionService.enrichUser(user);
             return user;
         };
     }

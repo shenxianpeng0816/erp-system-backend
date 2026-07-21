@@ -40,7 +40,7 @@ public class OutboundController {
     private final WarehouseMapper warehouseMapper;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:outbound:list')")
     public Result<PageResult<OutboundOrder>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String orderNo,
@@ -82,7 +82,7 @@ public class OutboundController {
 
     /** Export all outbound orders matching list filters (no pagination). */
     @GetMapping("/export")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:outbound:export')")
     public Result<List<OutboundOrder>> export(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String orderNo,
@@ -126,7 +126,7 @@ public class OutboundController {
 
     /** Warehouse marks as printed (ready to ship) */
     @PostMapping("/{id}/print")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:outbound:print')")
     public Result<OutboundOrder> print(@PathVariable Long id) {
         OutboundOrder dn = outboundMapper.selectById(id);
         if (dn == null) throw new BusinessException("Delivery note not found");
@@ -137,7 +137,7 @@ public class OutboundController {
 
     /** Warehouse executes outbound → deduct inventory + write log */
     @PostMapping("/{id}/ship")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:outbound:ship')")
     @Transactional
     public Result<OutboundOrder> ship(@PathVariable Long id) {
         OutboundOrder dn = outboundMapper.selectById(id);

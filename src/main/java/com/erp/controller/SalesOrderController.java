@@ -25,31 +25,27 @@ public class SalesOrderController {
     private final SalesOrderService orderService;
     private final SalesOrderItemMapper itemMapper;
 
-    /** Sales: create draft order */
     @PostMapping
-    @PreAuthorize("hasAnyRole('SALES','ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:order:add')")
     public Result<SalesOrder> create(@Valid @RequestBody CreateOrderRequest req) {
         return Result.success(orderService.createOrder(req));
     }
 
-    /** Creator submits draft (owner check in service) */
     @PostMapping("/{id}/submit")
     @PreAuthorize("isAuthenticated()")
     public Result<SalesOrder> submit(@PathVariable Long id) {
         return Result.success(orderService.submitOrder(id));
     }
 
-    /** Admin: approve / reject / redirect */
     @PostMapping("/{id}/approval")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:order:approve')")
     public Result<SalesOrder> approve(@PathVariable Long id,
                                       @RequestBody ApprovalRequest req) {
         return Result.success(orderService.handleApproval(id, req));
     }
 
-    /** Sales: my orders (paginated) */
     @GetMapping("/mine")
-    @PreAuthorize("hasAnyRole('SALES','ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:order:list:mine')")
     public Result<PageResult<SalesOrder>> mine(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String status,
@@ -58,9 +54,8 @@ public class SalesOrderController {
         return Result.success(orderService.pageMyOrders(keyword, status, page, size));
     }
 
-    /** Admin + warehouse + inbound: full list (paginated). FINANCE uses /finance; SALES uses /orders/mine. */
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:order:list:all')")
     public Result<PageResult<SalesOrder>> all(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String status,
@@ -70,59 +65,51 @@ public class SalesOrderController {
         return Result.success(orderService.pageAllOrders(keyword, status, salesUserId, page, size));
     }
 
-    /** Admin: pending approvals only */
     @GetMapping("/pending")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:order:pending')")
     public Result<List<SalesOrder>> pending() {
         return Result.success(orderService.listPendingApprovals());
     }
 
-    /** Detail */
     @GetMapping("/{id}")
     public Result<SalesOrder> detail(@PathVariable Long id) {
         return Result.success(orderService.getDetail(id));
     }
 
-    /** Order items — includes product name/spec/unit via JOIN */
     @GetMapping("/{id}/items")
     public Result<List<SalesOrderItem>> items(@PathVariable Long id) {
         orderService.assertOrderViewable(id);
         return Result.success(itemMapper.findWithProductByOrderId(id));
     }
 
-    /** Approval history for an order */
     @GetMapping("/{id}/approvals")
     public Result<List<ApprovalFlow>> approvalHistory(@PathVariable Long id) {
         return Result.success(orderService.listApprovalHistory(id));
     }
 
-    /** Sales: confirm delivery + upload sign image URL */
     @PostMapping("/{id}/confirm")
-    @PreAuthorize("hasAnyRole('SALES','ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:order:confirm')")
     public Result<SalesOrder> confirm(@PathVariable Long id,
                                       @RequestParam(required = false) String signImageUrl) {
         return Result.success(orderService.confirmDelivery(id, signImageUrl));
     }
 
-    /** Admin or sales owner: update draft or pending-approval order */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','SALES')")
+    @PreAuthorize("@ss.hasPermi('erp:order:edit')")
     public Result<SalesOrder> update(@PathVariable Long id,
                                      @Valid @RequestBody CreateOrderRequest req) {
         return Result.success(orderService.updatePendingOrder(id, req));
     }
 
-    /** Admin or sales owner: cancel approved/shipped order and void linked documents */
     @PostMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:order:cancel')")
     public Result<SalesOrder> cancel(@PathVariable Long id,
                                      @RequestBody(required = false) CancelOrderRequest req) {
         return Result.success(orderService.cancelOrder(id, req));
     }
 
-    /** Admin only (same as order approval): delete draft / pending / rejected orders */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:order:remove')")
     public Result<Void> delete(@PathVariable Long id) {
         orderService.deleteOrder(id);
         return Result.success();

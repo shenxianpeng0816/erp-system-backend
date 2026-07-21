@@ -54,7 +54,7 @@ public class InventoryController {
 
     /** Products with stock below minimum threshold */
     @GetMapping("/alerts")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:inventory:alert')")
     public Result<List<Inventory>> alerts(
             @RequestParam(required = false) Long warehouseId,
             @RequestParam(required = false) String countryCode) {
@@ -74,7 +74,7 @@ public class InventoryController {
 
     /** Transaction log for a specific product */
     @GetMapping("/logs/{productId}")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND','FINANCE')")
+    @PreAuthorize("@ss.hasPermi('erp:inventory:log')")
     public Result<List<InventoryLog>> logs(
             @PathVariable Long productId,
             @RequestParam(required = false) Long warehouseId) {
@@ -91,7 +91,7 @@ public class InventoryController {
 
     /** Transaction log for a specific inbound/outbound order */
     @GetMapping("/logs")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:inventory:log')")
     public Result<List<InventoryLog>> logsByRef(
             @RequestParam Long refId,
             @RequestParam String refType) {
@@ -105,7 +105,7 @@ public class InventoryController {
      * Capped for UI performance.
      */
     @GetMapping("/transaction-logs")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND','FINANCE')")
+    @PreAuthorize("@ss.hasPermi('erp:inventory:transaction')")
     public Result<List<InventoryLog>> transactionLogs(
             @RequestParam(required = false) Long warehouseId,
             @RequestParam(required = false) String productName) {
@@ -225,7 +225,7 @@ public class InventoryController {
     }
 
     @PostMapping("/products")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:inventory:product:add')")
     public Result<Product> createProduct(@RequestBody Product product) {
         product.setCountryCode(requireCountryCode(product.getCountryCode()));
         if (product.getName() == null || product.getName().isBlank()) {
@@ -239,7 +239,7 @@ public class InventoryController {
     }
 
     @PutMapping("/products/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:inventory:product:edit')")
     public Result<Product> updateProduct(@PathVariable Long id, @RequestBody Product body) {
         Product existing = productMapper.selectById(id);
         if (existing == null) throw new BusinessException("Product not found");
@@ -299,7 +299,7 @@ public class InventoryController {
      * Soft-deletes the product ({@code status=0}). Blocked while on-hand inventory quantity is positive.
      */
     @DeleteMapping("/products/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:inventory:product:remove')")
     public Result<Void> deleteProduct(@PathVariable Long id) {
         Product existing = productMapper.selectById(id);
         if (existing == null) throw new BusinessException("Product not found");

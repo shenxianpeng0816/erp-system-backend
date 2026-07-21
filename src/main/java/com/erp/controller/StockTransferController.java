@@ -40,7 +40,7 @@ public class StockTransferController {
     private final DocSequenceService docSequenceService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:transfer:list')")
     public Result<PageResult<StockTransfer>> list(
             @RequestParam(required = false) Long warehouseId,
             @RequestParam(defaultValue = "1") long page,
@@ -59,7 +59,7 @@ public class StockTransferController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:transfer:list')")
     public Result<StockTransfer> detail(@PathVariable Long id) {
         StockTransfer transfer = transferMapper.selectById(id);
         if (transfer == null) throw new BusinessException("Stock transfer not found");
@@ -68,13 +68,13 @@ public class StockTransferController {
     }
 
     @GetMapping("/{id}/items")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:transfer:list')")
     public Result<List<StockTransferItem>> items(@PathVariable Long id) {
         return Result.success(transferItemMapper.findWithProductByTransferId(id));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:transfer:add')")
     @Transactional
     public Result<StockTransfer> create(@RequestBody CreateStockTransferRequest req) {
         validateCreateRequest(req);
@@ -110,7 +110,7 @@ public class StockTransferController {
     }
 
     @PostMapping("/{id}/confirm")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:transfer:confirm')")
     @Transactional
     public Result<StockTransfer> confirm(@PathVariable Long id) {
         StockTransfer transfer = transferMapper.selectById(id);
@@ -154,7 +154,7 @@ public class StockTransferController {
     }
 
     @PostMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE','INBOUND')")
+    @PreAuthorize("@ss.hasPermi('erp:transfer:cancel')")
     @Transactional
     public Result<StockTransfer> cancel(@PathVariable Long id) {
         StockTransfer transfer = transferMapper.selectById(id);

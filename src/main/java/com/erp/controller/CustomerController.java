@@ -111,7 +111,7 @@ public class CustomerController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','SALES')")
+    @PreAuthorize("@ss.hasPermi('erp:customer:add')")
     public Result<Customer> create(@RequestBody Customer customer) {
         customer.setCreatedBy(SecurityUtil.currentUserId());
         customer.setStatus(1);
@@ -120,7 +120,7 @@ public class CustomerController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','SALES')")
+    @PreAuthorize("@ss.hasPermi('erp:customer:edit')")
     public Result<Customer> update(@PathVariable Long id, @RequestBody Customer customer) {
         Customer existing = customerMapper.selectById(id);
         if (existing == null) {
@@ -149,7 +149,7 @@ public class CustomerController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:customer:remove')")
     public Result<?> delete(@PathVariable Long id) {
         Customer existing = customerMapper.selectById(id);
         if (existing == null) {

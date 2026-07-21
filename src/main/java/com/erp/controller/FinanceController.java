@@ -53,7 +53,7 @@ public class FinanceController {
     // ── Invoices ─────────────────────────────────────────────────────────────
 
     @GetMapping("/invoices")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @PreAuthorize("@ss.hasPermi('erp:finance:invoice:list')")
     public Result<PageResult<Invoice>> invoices(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String orderNo,
@@ -95,7 +95,7 @@ public class FinanceController {
     // ── Receivables ──────────────────────────────────────────────────────────
 
     @GetMapping("/receivables/summary")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @PreAuthorize("@ss.hasPermi('erp:finance:receivable:list')")
     public Result<ReceivableSummary> receivablesSummary(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long customerId,
@@ -118,7 +118,7 @@ public class FinanceController {
     }
 
     @GetMapping("/receivables")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @PreAuthorize("@ss.hasPermi('erp:finance:receivable:list')")
     public Result<PageResult<Receivable>> receivables(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long customerId,
@@ -142,7 +142,7 @@ public class FinanceController {
 
     /** Export all receivables matching list filters (no pagination). */
     @GetMapping("/receivables/export")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @PreAuthorize("@ss.hasPermi('erp:finance:receivable:export')")
     public Result<List<Receivable>> exportReceivables(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long customerId,
@@ -271,7 +271,7 @@ public class FinanceController {
 
     /** Paginated payment records for a receivable (supports multiple partial payments). */
     @GetMapping("/receivables/{id}/payments")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @PreAuthorize("@ss.hasPermi('erp:finance:receivable:list')")
     public Result<PageResult<PaymentRecord>> receivablePayments(
             @PathVariable Long id,
             @RequestParam(defaultValue = "1") long page,
@@ -291,7 +291,7 @@ public class FinanceController {
 
     /** Record a payment against a receivable */
     @PostMapping("/receivables/{id}/pay")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @PreAuthorize("@ss.hasPermi('erp:finance:pay')")
     @Transactional
     public Result<Receivable> recordPayment(@PathVariable Long id,
                                             @RequestBody PaymentRequest req) {
@@ -329,7 +329,7 @@ public class FinanceController {
 
     /** Update an existing payment record and recalculate receivable totals. */
     @PutMapping("/receivables/{receivableId}/payments/{paymentId}")
-    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @PreAuthorize("@ss.hasPermi('erp:finance:pay:edit')")
     @Transactional
     public Result<Receivable> updatePayment(@PathVariable Long receivableId,
                                             @PathVariable Long paymentId,

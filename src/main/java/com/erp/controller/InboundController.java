@@ -44,7 +44,7 @@ public class InboundController {
     private final WarehouseMapper warehouseMapper;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
+    @PreAuthorize("@ss.hasPermi('erp:inbound:list')")
     public Result<PageResult<InboundOrder>> list(
             @RequestParam(required = false) Long warehouseId,
             @RequestParam(defaultValue = "1") long page,
@@ -63,7 +63,7 @@ public class InboundController {
 
     /** Export all inbound orders (no pagination). */
     @GetMapping("/export")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
+    @PreAuthorize("@ss.hasPermi('erp:inbound:export')")
     public Result<List<InboundOrder>> export(@RequestParam(required = false) Long warehouseId) {
         LambdaQueryWrapper<InboundOrder> q = new LambdaQueryWrapper<InboundOrder>()
                 .orderByDesc(InboundOrder::getCreatedAt);
@@ -76,7 +76,7 @@ public class InboundController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
+    @PreAuthorize("@ss.hasPermi('erp:inbound:query')")
     public Result<InboundOrder> detail(@PathVariable Long id) {
         InboundOrder order = inboundMapper.selectById(id);
         if (order != null) {
@@ -87,14 +87,14 @@ public class InboundController {
     }
 
     @GetMapping("/{id}/items")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
+    @PreAuthorize("@ss.hasPermi('erp:inbound:query')")
     public Result<List<InboundItem>> items(@PathVariable Long id) {
         return Result.success(inboundItemMapper.selectList(
                 new LambdaQueryWrapper<InboundItem>().eq(InboundItem::getInboundId, id)));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
+    @PreAuthorize("@ss.hasPermi('erp:inbound:add')")
     @Transactional
     public Result<InboundOrder> create(@RequestBody CreateInboundRequest req) {
         if (req.getOperatorId() == null) {
@@ -138,7 +138,7 @@ public class InboundController {
 
     /** Confirm inbound → add to inventory + write log */
     @PostMapping("/{id}/confirm")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
+    @PreAuthorize("@ss.hasPermi('erp:inbound:confirm')")
     @Transactional
     public Result<InboundOrder> confirm(@PathVariable Long id) {
         InboundOrder order = inboundMapper.selectById(id);
@@ -175,7 +175,7 @@ public class InboundController {
 
     /** Reject draft — closes order without inventory change */
     @PostMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
+    @PreAuthorize("@ss.hasPermi('erp:inbound:reject')")
     @Transactional
     public Result<InboundOrder> reject(
             @PathVariable Long id,
@@ -200,7 +200,7 @@ public class InboundController {
 
     /** Admin only — cannot delete confirmed (stock already applied). */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:inbound:remove')")
     @Transactional
     public Result<Void> delete(@PathVariable Long id) {
         InboundOrder order = inboundMapper.selectById(id);
@@ -215,7 +215,7 @@ public class InboundController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE')")
+    @PreAuthorize("@ss.hasPermi('erp:inbound:edit')")
     @Transactional
     public Result<InboundOrder> update(@PathVariable Long id, @RequestBody CreateInboundRequest req) {
         InboundOrder order = inboundMapper.selectById(id);

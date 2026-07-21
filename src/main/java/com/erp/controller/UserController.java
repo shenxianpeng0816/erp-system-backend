@@ -8,7 +8,10 @@ import com.erp.common.result.Result;
 import com.erp.entity.SysOperationLog;
 import com.erp.entity.User;
 import com.erp.mapper.SysOperationLogMapper;
+import com.erp.mapper.SysRoleMapper;
+import com.erp.mapper.SysUserRoleMapper;
 import com.erp.mapper.UserMapper;
+import com.erp.service.SysPermissionService;
 import com.erp.util.SecurityUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,6 +28,9 @@ public class UserController {
 
     private final UserMapper userMapper;
     private final SysOperationLogMapper operationLogMapper;
+    private final SysPermissionService permissionService;
+    private final SysUserRoleMapper userRoleMapper;
+    private final SysRoleMapper roleMapper;
     private final PasswordEncoder passwordEncoder;
 
     /**
@@ -33,7 +39,7 @@ public class UserController {
      * {@code WAREHOUSE} returns WAREHOUSE only.
      */
     @GetMapping("/by-role/{role}")
-    @PreAuthorize("hasAnyRole('ADMIN','INBOUND','WAREHOUSE','FINANCE','SALES')")
+    @PreAuthorize("@ss.hasPermi('erp:user:byRole')")
     public Result<List<User>> listByRole(@PathVariable String role) {
         String r = role == null ? "" : role.trim().toUpperCase();
         if (!Set.of("INBOUND", "WAREHOUSE", "SALES").contains(r)) {
@@ -55,7 +61,7 @@ public class UserController {
     }
 
     @GetMapping("/operation-logs")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:user:operlog')")
     public Result<PageResult<SysOperationLog>> operationLogs(
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "20") long size) {
@@ -75,33 +81,40 @@ public class UserController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:user:list')")
     public Result<List<User>> list() {
         List<User> users = userMapper.selectList(
                 new LambdaQueryWrapper<User>().eq(User::getStatus, 1));
-        users.forEach(u -> u.setPassword(null)); // mask password
+        users.forEach(u -> {
+            u.setPassword(null);
+            u.setRoleIds(userRoleMapper.selectRoleIdsByUserId(u.getId()));
+        });
         return Result.success(users);
     }
 
     @GetMapping("/me")
     public Result<User> me() {
         User u = SecurityUtil.currentUser();
+        permissionService.enrichUser(u);
         u.setPassword(null);
+        u.setRoleIds(userRoleMapper.selectRoleIdsByUserId(u.getId()));
         return Result.success(u);
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:user:edit')")
     public Result<User> create(@RequestBody User user) {
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         user.setStatus(1);
         userMapper.insert(user);
+        syncRolesFromRequest(user);
         user.setPassword(null);
+        user.setRoleIds(userRoleMapper.selectRoleIdsByUserId(user.getId()));
         return Result.success(user);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:user:edit')")
     public Result<User> update(@PathVariable Long id, @RequestBody User user) {
         user.setId(id);
         if (user.getPassword() != null && !user.getPassword().isBlank()) {
@@ -110,12 +123,30 @@ public class UserController {
             user.setPassword(null);
         }
         userMapper.updateById(user);
+        syncRolesFromRequest(user);
         user.setPassword(null);
+        user.setRoleIds(userRoleMapper.selectRoleIdsByUserId(id));
         return Result.success(user);
     }
 
+    /** Prefer roleIds from body; else map legacy role ENUM to a single sys_role. */
+    private void syncRolesFromRequest(User user) {
+        if (user.getRoleIds() != null && !user.getRoleIds().isEmpty()) {
+            permissionService.assignUserRoles(user.getId(), user.getRoleIds());
+            return;
+        }
+        if (user.getRole() != null && !user.getRole().isBlank()) {
+            var role = roleMapper.selectOne(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.erp.entity.SysRole>()
+                            .eq(com.erp.entity.SysRole::getRoleKey, user.getRole().trim().toLowerCase()));
+            if (role != null) {
+                permissionService.assignUserRoles(user.getId(), List.of(role.getRoleId()));
+            }
+        }
+    }
+
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("@ss.hasPermi('erp:user:remove')")
     public Result<?> delete(@PathVariable Long id) {
         User u = new User();
         u.setId(id);
