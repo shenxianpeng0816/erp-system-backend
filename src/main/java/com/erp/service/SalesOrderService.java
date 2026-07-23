@@ -4,8 +4,11 @@ import com.erp.common.dto.PageResult;
 import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CancelOrderRequest;
 import com.erp.dto.request.CreateOrderRequest;
+import com.erp.dto.response.OrderDetailData;
+import com.erp.dto.response.OrderPrintData;
 import com.erp.entity.ApprovalFlow;
 import com.erp.entity.SalesOrder;
+import com.erp.entity.SalesOrderItem;
 
 import java.util.List;
 
@@ -19,6 +22,10 @@ public interface SalesOrderService {
     List<SalesOrder> listAllOrders();
     PageResult<SalesOrder> pageAllOrders(String keyword, String status, Long salesUserId, long page, long size);
     SalesOrder getDetail(Long orderId);
+    List<SalesOrderItem> listItemsWithProduct(Long orderId);
+    OrderPrintData getPrintData(Long orderId);
+    /** Order page bundle: header + lines + customers + approval history. */
+    OrderDetailData getDetailData(Long orderId);
     /** Ensures the current user may read this order (used for items & approvals). */
     void assertOrderViewable(Long orderId);
     List<ApprovalFlow> listApprovalHistory(Long orderId);

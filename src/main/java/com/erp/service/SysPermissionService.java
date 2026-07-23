@@ -6,6 +6,7 @@ import com.erp.entity.SysRole;
 import com.erp.entity.User;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public interface SysPermissionService {
@@ -37,4 +38,9 @@ public interface SysPermissionService {
     void assignRoleMenus(Long roleId, List<Long> menuIds);
 
     List<SysMenu> listAllMenusTree();
+
+    /** Role + assigned menu ids for admin UI. */
+    Map<String, Object> getRoleDetail(Long roleId);
+
+    List<Long> listUserRoleIds(Long userId);
 }

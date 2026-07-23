@@ -35,6 +35,16 @@ public class PermissionService {
         return false;
     }
 
+    /**
+     * Same business action (order approval) with step-specific button perms.
+     * Prefer this over sprinkling hasAnyPermi of unrelated features on one endpoint.
+     */
+    public boolean hasOrderApprove() {
+        return hasAnyPermi(
+                "erp:order:approve:first,erp:order:approve:final,"
+                        + "erp:order:approve:finance,erp:order:approve:admin,erp:order:approve");
+    }
+
     /** roleKey without ROLE_ prefix, e.g. admin / sales */
     public boolean hasRole(String role) {
         if (!StringUtils.hasText(role)) return false;

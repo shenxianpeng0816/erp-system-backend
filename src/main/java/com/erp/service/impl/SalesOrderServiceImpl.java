@@ -9,6 +9,8 @@ import com.erp.common.exception.BusinessException;
 import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CancelOrderRequest;
 import com.erp.dto.request.CreateOrderRequest;
+import com.erp.dto.response.OrderDetailData;
+import com.erp.dto.response.OrderPrintData;
 import com.erp.entity.*;
 import com.erp.mapper.*;
 import com.erp.security.PermissionService;
@@ -281,6 +283,30 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         return order;
     }
 
+    @Override
+    public List<SalesOrderItem> listItemsWithProduct(Long orderId) {
+        assertOrderViewable(orderId);
+        return itemMapper.findWithProductByOrderId(orderId);
+    }
+
+    @Override
+    public OrderPrintData getPrintData(Long orderId) {
+        OrderDetailData detail = getDetailData(orderId);
+        return new OrderPrintData(detail.getOrder(), detail.getItems(), detail.getShipTo(), detail.getBillTo());
+    }
+
+    @Override
+    public OrderDetailData getDetailData(Long orderId) {
+        SalesOrder order = getDetail(orderId);
+        List<SalesOrderItem> items = itemMapper.findWithProductByOrderId(orderId);
+        Customer shipTo = order.getShipToCustomerId() != null
+                ? customerMapper.selectById(order.getShipToCustomerId()) : null;
+        Customer billTo = order.getBillToCustomerId() != null
+                ? customerMapper.selectById(order.getBillToCustomerId()) : null;
+        List<ApprovalFlow> approvals = listApprovalHistory(orderId);
+        return new OrderDetailData(order, items, shipTo, billTo, approvals);
+    }
+
     /** Fills display names for list and detail APIs (salesperson, ship-to, bill-to). */
     private void enrichCustomerNames(List<SalesOrder> orders) {
         if (orders == null || orders.isEmpty()) {
@@ -357,7 +383,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
      * SALES: only own orders. ADMIN: all.
      * Users with first/final approve perms: pending + post-approval pipeline.
      * FINANCE role (legacy): same pipeline. WAREHOUSE / INBOUND: all.
-     * Also: erp:order:list:all / outbound print|list (DN print & warehouse list).
+     * Also: erp:order:list:all, erp:order:query.
      */
     private void assertCanViewOrder(SalesOrder order) {
         String role = SecurityUtil.currentRole();
@@ -381,8 +407,10 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             return;
         }
         // RBAC: warehouse-like custom roles, or list:all without legacy role string
-        if (permissionService.hasPermi("erp:order:list:all")
-                || permissionService.hasAnyPermi("erp:outbound:print,erp:outbound:list")) {
+        if (permissionService.hasPermi("erp:order:list:all")) {
+            return;
+        }
+        if (permissionService.hasPermi("erp:order:query")) {
             return;
         }
         if (permissionService.hasPermi("erp:order:list:mine")

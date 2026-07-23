@@ -236,6 +236,21 @@ public class SysPermissionServiceImpl implements SysPermissionService {
         return buildTree(all, 0L);
     }
 
+    @Override
+    public Map<String, Object> getRoleDetail(Long roleId) {
+        SysRole role = roleMapper.selectById(roleId);
+        List<Long> menuIds = menuMapper.selectMenuIdsByRoleId(roleId);
+        Map<String, Object> body = new HashMap<>();
+        body.put("role", role);
+        body.put("menuIds", menuIds);
+        return body;
+    }
+
+    @Override
+    public List<Long> listUserRoleIds(Long userId) {
+        return userRoleMapper.selectRoleIdsByUserId(userId);
+    }
+
     private List<SysMenu> buildTree(List<SysMenu> menus, Long parentId) {
         List<SysMenu> tree = new ArrayList<>();
         for (SysMenu m : menus) {

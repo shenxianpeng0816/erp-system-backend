@@ -24,7 +24,7 @@ public class WarehouseController {
      * Admin may pass {@code all=true} to include inactive warehouses.
      */
     @GetMapping
-    @PreAuthorize("@ss.hasAnyPermi('erp:warehouse:add,erp:inventory:list,erp:order:add,erp:order:edit,erp:inbound:list,erp:transfer:list')")
+    @PreAuthorize("@ss.hasPermi('erp:warehouse:list')")
     public Result<List<Warehouse>> list(
             @RequestParam(required = false) String countryCode,
             @RequestParam(defaultValue = "false") boolean all) {
@@ -38,7 +38,7 @@ public class WarehouseController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("@ss.hasAnyPermi('erp:warehouse:add,erp:inventory:list,erp:order:add,erp:order:edit,erp:inbound:list,erp:transfer:list')")
+    @PreAuthorize("@ss.hasPermi('erp:warehouse:list')")
     public Result<Warehouse> detail(@PathVariable Long id) {
         return Result.success(warehouseService.requireActive(id));
     }

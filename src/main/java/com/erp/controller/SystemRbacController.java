@@ -4,16 +4,12 @@ import com.erp.common.result.Result;
 import com.erp.dto.request.SaveRoleRequest;
 import com.erp.entity.SysMenu;
 import com.erp.entity.SysRole;
-import com.erp.mapper.SysMenuMapper;
-import com.erp.mapper.SysRoleMapper;
-import com.erp.mapper.SysUserRoleMapper;
 import com.erp.service.SysPermissionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -23,9 +19,6 @@ import java.util.Map;
 public class SystemRbacController {
 
     private final SysPermissionService permissionService;
-    private final SysRoleMapper roleMapper;
-    private final SysMenuMapper menuMapper;
-    private final SysUserRoleMapper userRoleMapper;
 
     @GetMapping("/roles")
     @PreAuthorize("@ss.hasPermi('erp:role:list')")
@@ -39,12 +32,7 @@ public class SystemRbacController {
     @GetMapping("/roles/{roleId}")
     @PreAuthorize("@ss.hasPermi('erp:role:list')")
     public Result<Map<String, Object>> roleDetail(@PathVariable Long roleId) {
-        SysRole role = roleMapper.selectById(roleId);
-        List<Long> menuIds = menuMapper.selectMenuIdsByRoleId(roleId);
-        Map<String, Object> body = new HashMap<>();
-        body.put("role", role);
-        body.put("menuIds", menuIds);
-        return Result.success(body);
+        return Result.success(permissionService.getRoleDetail(roleId));
     }
 
     @PostMapping("/roles")
@@ -83,7 +71,7 @@ public class SystemRbacController {
     @GetMapping("/users/{userId}/roles")
     @PreAuthorize("@ss.hasPermi('erp:user:role:edit')")
     public Result<List<Long>> userRoleIds(@PathVariable Long userId) {
-        return Result.success(userRoleMapper.selectRoleIdsByUserId(userId));
+        return Result.success(permissionService.listUserRoleIds(userId));
     }
 
     @PutMapping("/users/{userId}/roles")

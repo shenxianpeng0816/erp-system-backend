@@ -1,0 +1,751 @@
+package com.erp.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.erp.common.dto.PageQuery;
+import com.erp.common.dto.PageResult;
+import com.erp.common.exception.BusinessException;
+import com.erp.dto.query.ReceivableFilterParams;
+import com.erp.dto.query.ReceivableSummaryAgg;
+import com.erp.dto.request.PaymentRequest;
+import com.erp.dto.response.InvoicePrintData;
+import com.erp.dto.response.ReceivableSummary;
+import com.erp.entity.Customer;
+import com.erp.entity.Invoice;
+import com.erp.entity.PaymentRecord;
+import com.erp.entity.Receivable;
+import com.erp.entity.SalesOrder;
+import com.erp.entity.SalesOrderItem;
+import com.erp.entity.User;
+import com.erp.mapper.CustomerMapper;
+import com.erp.mapper.InvoiceMapper;
+import com.erp.mapper.PaymentRecordMapper;
+import com.erp.mapper.ReceivableMapper;
+import com.erp.mapper.SalesOrderItemMapper;
+import com.erp.mapper.SalesOrderMapper;
+import com.erp.mapper.UserMapper;
+import com.erp.service.FinanceService;
+import com.erp.util.SecurityUtil;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+@Service
+@RequiredArgsConstructor
+public class FinanceServiceImpl implements FinanceService {
+
+    private static final String METHOD_CASH = "Cash";
+
+    private final InvoiceMapper invoiceMapper;
+    private final ReceivableMapper receivableMapper;
+    private final PaymentRecordMapper paymentRecordMapper;
+    private final CustomerMapper customerMapper;
+    private final SalesOrderMapper salesOrderMapper;
+    private final SalesOrderItemMapper salesOrderItemMapper;
+    private final UserMapper userMapper;
+
+    @Override
+    public PageResult<Invoice> pageInvoices(String status, String orderNo, long page, long size) {
+        LambdaQueryWrapper<Invoice> q = new LambdaQueryWrapper<Invoice>()
+                .orderByDesc(Invoice::getIssueDate);
+        if (status != null) {
+            q.eq(Invoice::getStatus, status);
+        }
+        if (orderNo != null && !orderNo.isBlank()) {
+            List<SalesOrder> orders = salesOrderMapper.selectList(
+                    new LambdaQueryWrapper<SalesOrder>()
+                            .like(SalesOrder::getOrderNo, orderNo.trim()));
+            if (orders.isEmpty()) {
+                PageResult<Invoice> empty = new PageResult<>();
+                empty.setRecords(List.of());
+                empty.setTotal(0);
+                empty.setCurrent(PageQuery.normalizePage(page));
+                empty.setSize(PageQuery.normalizeSize(size));
+                return empty;
+            }
+            q.in(Invoice::getOrderId,
+                    orders.stream().map(SalesOrder::getId).toList());
+        }
+        Page<Invoice> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
+        Page<Invoice> result = invoiceMapper.selectPage(p, q);
+        enrichInvoices(result.getRecords());
+        return PageQuery.from(result);
+    }
+
+    @Override
+    public Invoice getInvoiceDetail(Long id) {
+        Invoice invoice = invoiceMapper.selectById(id);
+        if (invoice != null) {
+            enrichInvoices(List.of(invoice));
+        }
+        return invoice;
+    }
+
+    @Override
+    public InvoicePrintData getInvoicePrintData(Long invoiceId) {
+        Invoice invoice = invoiceMapper.selectById(invoiceId);
+        if (invoice == null) {
+            throw new BusinessException("Invoice not found");
+        }
+        enrichInvoices(List.of(invoice));
+        SalesOrder order = invoice.getOrderId() != null
+                ? salesOrderMapper.selectById(invoice.getOrderId()) : null;
+        List<SalesOrderItem> items = invoice.getOrderId() != null
+                ? salesOrderItemMapper.findWithProductByOrderId(invoice.getOrderId()) : List.of();
+        Customer billTo = invoice.getBillToCustomerId() != null
+                ? customerMapper.selectById(invoice.getBillToCustomerId()) : null;
+        return new InvoicePrintData(invoice, order, items, billTo);
+    }
+
+    @Override
+    public ReceivableSummary getReceivablesSummary(
+            String status,
+            Long customerId,
+            LocalDate createdFrom,
+            LocalDate createdTo,
+            String customerName,
+            String shopName,
+            String salesUserName,
+            String productName,
+            String orderNo) {
+        ReceivableFilterParams params = toFilterParams(
+                status, customerId, createdFrom, createdTo, customerName, shopName, salesUserName, productName, orderNo,
+                status == null);
+        ReceivableSummaryAgg agg = receivableMapper.summarizeReceivables(params);
+        ReceivableSummary summary = new ReceivableSummary();
+        summary.setTotalOutstanding(
+                agg.getTotalOutstanding() != null ? agg.getTotalOutstanding() : BigDecimal.ZERO);
+        summary.setCount(agg.getRecordCount() != null ? agg.getRecordCount().intValue() : 0);
+        return summary;
+    }
+
+    @Override
+    public PageResult<Receivable> pageReceivables(
+            String status,
+            Long customerId,
+            LocalDate createdFrom,
+            LocalDate createdTo,
+            String customerName,
+            String shopName,
+            String salesUserName,
+            String productName,
+            String orderNo,
+            long page,
+            long size) {
+        LambdaQueryWrapper<Receivable> q = receivableQuery(
+                status, customerId, createdFrom, createdTo, customerName, shopName, salesUserName, productName, orderNo);
+
+        Page<Receivable> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
+        Page<Receivable> result = receivableMapper.selectPage(p, q);
+        enrichReceivables(result.getRecords());
+        return PageQuery.from(result);
+    }
+
+    @Override
+    public List<Receivable> exportReceivables(
+            String status,
+            Long customerId,
+            LocalDate createdFrom,
+            LocalDate createdTo,
+            String customerName,
+            String shopName,
+            String salesUserName,
+            String productName,
+            String orderNo) {
+        List<Receivable> recs = receivableMapper.selectList(receivableQuery(
+                status, customerId, createdFrom, createdTo, customerName, shopName, salesUserName, productName, orderNo));
+        enrichReceivables(recs);
+        enrichPaymentRemarks(recs);
+        return recs;
+    }
+
+    @Override
+    public PageResult<PaymentRecord> pageReceivablePayments(Long receivableId, long page, long size) {
+        Receivable rec = receivableMapper.selectById(receivableId);
+        if (rec == null) {
+            throw new BusinessException("Receivable not found");
+        }
+
+        Page<PaymentRecord> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizeSize(size));
+        Page<PaymentRecord> result = paymentRecordMapper.selectPage(p,
+                new LambdaQueryWrapper<PaymentRecord>()
+                        .eq(PaymentRecord::getReceivableId, receivableId)
+                        .orderByDesc(PaymentRecord::getPaidAt)
+                        .orderByDesc(PaymentRecord::getId));
+        enrichPaymentRecords(result.getRecords());
+        return PageQuery.from(result);
+    }
+
+    @Override
+    @Transactional
+    public Receivable recordPayment(Long receivableId, PaymentRequest req) {
+        Receivable rec = receivableMapper.selectById(receivableId);
+        if (rec == null) {
+            throw new BusinessException("Receivable not found");
+        }
+        if ("CANCELLED".equals(rec.getStatus())) {
+            throw new BusinessException("Receivable is cancelled");
+        }
+        if ("SETTLED".equals(rec.getStatus())) {
+            throw new BusinessException("Already settled");
+        }
+
+        Invoice invCheck = invoiceMapper.selectById(rec.getInvoiceId());
+        if (invCheck != null && "CANCELLED".equals(invCheck.getStatus())) {
+            throw new BusinessException("Invoice is cancelled");
+        }
+
+        int maxQty = maxQtyForPayment(rec, null);
+        PaymentAmount qtyAmount = resolvePaymentQtyAndAmount(rec, req, maxQty);
+
+        String paymentMethod = normalizePaymentMethod(req.getPaymentMethod());
+        String transactionRef = resolveTransactionRef(paymentMethod, req.getTransactionRef());
+        assertTransactionRefUnique(paymentMethod, transactionRef, null);
+
+        PaymentRecord payment = new PaymentRecord();
+        payment.setReceivableId(receivableId);
+        payment.setQty(qtyAmount.qty());
+        payment.setAmount(qtyAmount.amount());
+        payment.setPaymentMethod(paymentMethod);
+        payment.setTransactionRef(transactionRef);
+        payment.setPaidAt(req.getPaidAt() != null ? req.getPaidAt() : LocalDateTime.now());
+        payment.setRemark(req.getRemark() != null && !req.getRemark().isBlank() ? req.getRemark().trim() : null);
+        payment.setCreatedBy(SecurityUtil.currentUserId());
+        paymentRecordMapper.insert(payment);
+
+        recalculateReceivable(receivableId);
+        return receivableMapper.selectById(receivableId);
+    }
+
+    @Override
+    @Transactional
+    public Receivable updatePayment(Long receivableId, Long paymentId, PaymentRequest req) {
+        Receivable rec = receivableMapper.selectById(receivableId);
+        if (rec == null) {
+            throw new BusinessException("Receivable not found");
+        }
+        if ("CANCELLED".equals(rec.getStatus())) {
+            throw new BusinessException("Receivable is cancelled");
+        }
+
+        PaymentRecord existing = paymentRecordMapper.selectById(paymentId);
+        if (existing == null || !receivableId.equals(existing.getReceivableId())) {
+            throw new BusinessException("Payment record not found");
+        }
+
+        Invoice invCheck = invoiceMapper.selectById(rec.getInvoiceId());
+        if (invCheck != null && "CANCELLED".equals(invCheck.getStatus())) {
+            throw new BusinessException("Invoice is cancelled");
+        }
+
+        int maxQty = maxQtyForPayment(rec, paymentId);
+        PaymentAmount qtyAmount = resolvePaymentQtyAndAmount(rec, req, maxQty);
+
+        String paymentMethod = normalizePaymentMethod(req.getPaymentMethod());
+        String transactionRef = resolveTransactionRef(paymentMethod, req.getTransactionRef());
+        assertTransactionRefUnique(paymentMethod, transactionRef, paymentId);
+
+        existing.setQty(qtyAmount.qty());
+        existing.setAmount(qtyAmount.amount());
+        existing.setPaymentMethod(paymentMethod);
+        existing.setTransactionRef(transactionRef);
+        existing.setPaidAt(req.getPaidAt() != null ? req.getPaidAt() : existing.getPaidAt());
+        existing.setRemark(req.getRemark() != null && !req.getRemark().isBlank() ? req.getRemark().trim() : null);
+        paymentRecordMapper.updateById(existing);
+
+        recalculateReceivable(receivableId);
+        return receivableMapper.selectById(receivableId);
+    }
+
+    @Override
+    @Transactional
+    public Receivable deletePayment(Long receivableId, Long paymentId) {
+        Receivable rec = receivableMapper.selectById(receivableId);
+        if (rec == null) {
+            throw new BusinessException("Receivable not found");
+        }
+        if ("CANCELLED".equals(rec.getStatus())) {
+            throw new BusinessException("Receivable is cancelled");
+        }
+
+        PaymentRecord existing = paymentRecordMapper.selectById(paymentId);
+        if (existing == null || !receivableId.equals(existing.getReceivableId())) {
+            throw new BusinessException("Payment record not found");
+        }
+
+        Invoice invCheck = invoiceMapper.selectById(rec.getInvoiceId());
+        if (invCheck != null && "CANCELLED".equals(invCheck.getStatus())) {
+            throw new BusinessException("Invoice is cancelled");
+        }
+
+        paymentRecordMapper.deleteById(paymentId);
+        recalculateReceivable(receivableId);
+        return receivableMapper.selectById(receivableId);
+    }
+
+    private record PaymentAmount(int qty, BigDecimal amount) {}
+
+    private LambdaQueryWrapper<Receivable> receivableQuery(
+            String status,
+            Long customerId,
+            LocalDate createdFrom,
+            LocalDate createdTo,
+            String customerName,
+            String shopName,
+            String salesUserName,
+            String productName,
+            String orderNo) {
+        ReceivableFilterParams params = toFilterParams(
+                status, customerId, createdFrom, createdTo, customerName, shopName, salesUserName, productName, orderNo, null);
+        LambdaQueryWrapper<Receivable> q = new LambdaQueryWrapper<Receivable>()
+                .orderByDesc(Receivable::getCreatedAt);
+        applyReceivableFilters(q, params);
+        return q;
+    }
+
+    private ReceivableFilterParams toFilterParams(
+            String status,
+            Long customerId,
+            LocalDate createdFrom,
+            LocalDate createdTo,
+            String customerName,
+            String shopName,
+            String salesUserName,
+            String productName,
+            String orderNo,
+            Boolean excludeSettledAndCancelled) {
+        ReceivableFilterParams params = new ReceivableFilterParams();
+        params.setStatus(status);
+        params.setCustomerId(customerId);
+        if (createdFrom != null) {
+            params.setCreatedFrom(createdFrom.atStartOfDay());
+        }
+        if (createdTo != null) {
+            params.setCreatedToExclusive(createdTo.plusDays(1).atStartOfDay());
+        }
+        if (customerName != null && !customerName.isBlank()) {
+            params.setCustomerName(customerName.trim());
+        }
+        if (shopName != null && !shopName.isBlank()) {
+            params.setShopName(shopName.trim());
+        }
+        if (salesUserName != null && !salesUserName.isBlank()) {
+            params.setSalesUserName(salesUserName.trim());
+        }
+        if (productName != null && !productName.isBlank()) {
+            params.setProductName(productName.trim());
+        }
+        if (orderNo != null && !orderNo.isBlank()) {
+            params.setOrderNo(orderNo.trim());
+        }
+        params.setExcludeSettledAndCancelled(excludeSettledAndCancelled);
+        return params;
+    }
+
+    private void applyReceivableFilters(LambdaQueryWrapper<Receivable> q, ReceivableFilterParams params) {
+        if (params.getStatus() != null) {
+            q.eq(Receivable::getStatus, params.getStatus());
+        }
+        if (Boolean.TRUE.equals(params.getExcludeSettledAndCancelled())) {
+            q.notIn(Receivable::getStatus, "SETTLED", "CANCELLED");
+        }
+        if (params.getCustomerId() != null) {
+            q.eq(Receivable::getCustomerId, params.getCustomerId());
+        }
+        if (params.getCreatedFrom() != null) {
+            q.ge(Receivable::getCreatedAt, params.getCreatedFrom());
+        }
+        if (params.getCreatedToExclusive() != null) {
+            q.lt(Receivable::getCreatedAt, params.getCreatedToExclusive());
+        }
+        if (params.getCustomerName() != null) {
+            q.apply("""
+                    EXISTS (
+                        SELECT 1 FROM customer c
+                        WHERE c.id = receivable.customer_id
+                          AND c.name LIKE {0}
+                    )
+                    """, params.getCustomerName() + "%");
+        }
+        if (params.getShopName() != null) {
+            q.apply("""
+                    EXISTS (
+                        SELECT 1 FROM customer c
+                        WHERE c.id = receivable.customer_id
+                          AND c.shop_name LIKE {0}
+                    )
+                    """, params.getShopName() + "%");
+        }
+        if (params.getSalesUserName() != null) {
+            String prefix = params.getSalesUserName() + "%";
+            q.apply("""
+                    order_id IN (
+                        SELECT o.id FROM sales_order o
+                        INNER JOIN user u ON u.id = o.sales_user_id
+                        WHERE u.real_name LIKE {0} OR u.username LIKE {0}
+                    )
+                    """, prefix, prefix);
+        }
+        if (params.getProductName() != null) {
+            q.likeRight(Receivable::getProductName, params.getProductName());
+        }
+        if (params.getOrderNo() != null) {
+            q.likeRight(Receivable::getOrderNo, params.getOrderNo());
+        }
+    }
+
+    private PaymentAmount resolvePaymentQtyAndAmount(Receivable rec, PaymentRequest req, int maxQty) {
+        if (req.getQty() == null || req.getQty() <= 0) {
+            throw new BusinessException("Payment quantity must be positive");
+        }
+        if (rec.getUnitPrice() == null || rec.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("Unit price is not set for this receivable");
+        }
+        if (req.getQty() > maxQty) {
+            throw new BusinessException("Payment quantity exceeds allowed quantity (" + maxQty + ")");
+        }
+
+        BigDecimal payAmount = rec.getUnitPrice()
+                .multiply(BigDecimal.valueOf(req.getQty()))
+                .setScale(2, RoundingMode.HALF_UP);
+        if (req.getAmount() != null && req.getAmount().compareTo(payAmount) != 0) {
+            throw new BusinessException("Payment amount does not match unit price × quantity");
+        }
+        return new PaymentAmount(req.getQty(), payAmount);
+    }
+
+    private int maxQtyForPayment(Receivable rec, Long excludePaymentId) {
+        int totalQty = rec.getQty() != null ? rec.getQty() : 0;
+        List<PaymentRecord> payments = paymentRecordMapper.selectList(
+                new LambdaQueryWrapper<PaymentRecord>().eq(PaymentRecord::getReceivableId, rec.getId()));
+        int otherQty = payments.stream()
+                .filter(p -> excludePaymentId == null || !excludePaymentId.equals(p.getId()))
+                .mapToInt(p -> p.getQty() != null ? p.getQty() : 0)
+                .sum();
+        return Math.max(0, totalQty - otherQty);
+    }
+
+    private void assertTransactionRefUnique(String paymentMethod, String transactionRef, Long excludePaymentId) {
+        if (transactionRef == null) {
+            return;
+        }
+        LambdaQueryWrapper<PaymentRecord> q = new LambdaQueryWrapper<PaymentRecord>()
+                .eq(PaymentRecord::getPaymentMethod, paymentMethod)
+                .apply("UPPER(TRIM(transaction_ref)) = {0}", transactionRef);
+        if (excludePaymentId != null) {
+            q.ne(PaymentRecord::getId, excludePaymentId);
+        }
+        long duplicateCount = paymentRecordMapper.selectCount(q);
+        if (duplicateCount > 0) {
+            throw new BusinessException(
+                    "Transaction reference already exists for " + paymentMethod + ": " + transactionRef);
+        }
+    }
+
+    private void recalculateReceivable(Long receivableId) {
+        Receivable rec = receivableMapper.selectById(receivableId);
+        if (rec == null) {
+            return;
+        }
+
+        List<PaymentRecord> payments = paymentRecordMapper.selectList(
+                new LambdaQueryWrapper<PaymentRecord>().eq(PaymentRecord::getReceivableId, receivableId));
+
+        BigDecimal totalReceived = BigDecimal.ZERO;
+        int totalReceivedQty = 0;
+        for (PaymentRecord p : payments) {
+            if (p.getAmount() != null) {
+                totalReceived = totalReceived.add(p.getAmount());
+            }
+            totalReceivedQty += p.getQty() != null ? p.getQty() : 0;
+        }
+
+        if (totalReceived.compareTo(rec.getAmount()) > 0) {
+            throw new BusinessException("Total payments exceed receivable amount");
+        }
+        int totalQty = rec.getQty() != null ? rec.getQty() : 0;
+        if (totalReceivedQty > totalQty) {
+            throw new BusinessException("Total payment quantity exceeds receivable quantity");
+        }
+
+        rec.setReceivedAmount(totalReceived);
+        rec.setReceivedQty(totalReceivedQty);
+        rec.setBalance(rec.getAmount().subtract(totalReceived));
+
+        if (totalReceived.compareTo(BigDecimal.ZERO) == 0) {
+            rec.setStatus("OUTSTANDING");
+        } else if (rec.getBalance().compareTo(BigDecimal.ZERO) == 0) {
+            rec.setStatus("SETTLED");
+        } else {
+            rec.setStatus("PARTIAL");
+        }
+        receivableMapper.updateById(rec);
+        updateInvoiceStatus(rec.getInvoiceId());
+    }
+
+    private void enrichInvoices(List<Invoice> invoices) {
+        if (invoices == null || invoices.isEmpty()) {
+            return;
+        }
+        Set<Long> customerIds = new HashSet<>();
+        Set<Long> orderIds = new HashSet<>();
+        for (Invoice inv : invoices) {
+            if (inv.getBillToCustomerId() != null) {
+                customerIds.add(inv.getBillToCustomerId());
+            }
+            if (inv.getOrderId() != null) {
+                orderIds.add(inv.getOrderId());
+            }
+        }
+        Map<Long, String> customerNames = new HashMap<>();
+        if (!customerIds.isEmpty()) {
+            List<Customer> customers = customerMapper.selectList(
+                    new LambdaQueryWrapper<Customer>().in(Customer::getId, customerIds));
+            for (Customer c : customers) {
+                customerNames.put(c.getId(), c.getName());
+            }
+        }
+        Map<Long, SalesOrder> orderMap = new HashMap<>();
+        Set<Long> salesUserIds = new HashSet<>();
+        if (!orderIds.isEmpty()) {
+            List<SalesOrder> orders = salesOrderMapper.selectList(
+                    new LambdaQueryWrapper<SalesOrder>().in(SalesOrder::getId, orderIds));
+            for (SalesOrder order : orders) {
+                orderMap.put(order.getId(), order);
+                if (order.getSalesUserId() != null) {
+                    salesUserIds.add(order.getSalesUserId());
+                }
+            }
+        }
+        Map<Long, String> salesUserNames = new HashMap<>();
+        if (!salesUserIds.isEmpty()) {
+            List<User> users = userMapper.selectBatchIds(salesUserIds);
+            for (User u : users) {
+                if (u != null && u.getId() != null) {
+                    salesUserNames.put(u.getId(), userDisplayName(u));
+                }
+            }
+        }
+        for (Invoice inv : invoices) {
+            if (inv.getBillToCustomerId() != null) {
+                inv.setBillToCustomerName(customerNames.get(inv.getBillToCustomerId()));
+            }
+            if (inv.getOrderId() != null) {
+                SalesOrder order = orderMap.get(inv.getOrderId());
+                if (order != null) {
+                    inv.setOrderNo(order.getOrderNo());
+                    inv.setCountryCode(order.getCountryCode());
+                    if (order.getSalesUserId() != null) {
+                        inv.setSalesUserName(salesUserNames.get(order.getSalesUserId()));
+                    }
+                }
+            }
+        }
+    }
+
+    private void enrichReceivables(List<Receivable> recs) {
+        if (recs == null || recs.isEmpty()) {
+            return;
+        }
+
+        Set<Long> customerIds = new HashSet<>();
+        Set<Long> orderIds = new HashSet<>();
+        for (Receivable rec : recs) {
+            if (rec.getCustomerId() != null) {
+                customerIds.add(rec.getCustomerId());
+            }
+            if (rec.getOrderId() != null) {
+                orderIds.add(rec.getOrderId());
+            }
+        }
+
+        Map<Long, Customer> customerMap = new HashMap<>();
+        if (!customerIds.isEmpty()) {
+            List<Customer> customers = customerMapper.selectList(
+                    new LambdaQueryWrapper<Customer>().in(Customer::getId, customerIds));
+            for (Customer c : customers) {
+                customerMap.put(c.getId(), c);
+            }
+        }
+
+        Map<Long, SalesOrder> orderMap = new HashMap<>();
+        Set<Long> salesUserIds = new HashSet<>();
+        if (!orderIds.isEmpty()) {
+            List<SalesOrder> orders = salesOrderMapper.selectList(
+                    new LambdaQueryWrapper<SalesOrder>().in(SalesOrder::getId, orderIds));
+            for (SalesOrder order : orders) {
+                orderMap.put(order.getId(), order);
+                if (order.getSalesUserId() != null) {
+                    salesUserIds.add(order.getSalesUserId());
+                }
+            }
+        }
+
+        Map<Long, String> salesUserNames = new HashMap<>();
+        if (!salesUserIds.isEmpty()) {
+            List<User> users = userMapper.selectBatchIds(salesUserIds);
+            for (User u : users) {
+                if (u != null && u.getId() != null) {
+                    salesUserNames.put(u.getId(), userDisplayName(u));
+                }
+            }
+        }
+
+        for (Receivable rec : recs) {
+            if (rec.getCustomerId() != null) {
+                Customer customer = customerMap.get(rec.getCustomerId());
+                if (customer != null) {
+                    rec.setCustomerName(customer.getName());
+                    rec.setShopName(customer.getShopName());
+                }
+            }
+            SalesOrder order = rec.getOrderId() != null ? orderMap.get(rec.getOrderId()) : null;
+            if (order != null) {
+                if (rec.getOrderNo() == null || rec.getOrderNo().isBlank()) {
+                    rec.setOrderNo(order.getOrderNo());
+                }
+                rec.setCountryCode(order.getCountryCode());
+                if (order.getSalesUserId() != null) {
+                    rec.setSalesUserName(salesUserNames.get(order.getSalesUserId()));
+                }
+            }
+            int totalQty = rec.getQty() != null ? rec.getQty() : 0;
+            int receivedQty = rec.getReceivedQty() != null ? rec.getReceivedQty() : 0;
+            rec.setUnpaidQty(Math.max(0, totalQty - receivedQty));
+        }
+    }
+
+    private void enrichPaymentRemarks(List<Receivable> recs) {
+        if (recs == null || recs.isEmpty()) {
+            return;
+        }
+        Set<Long> receivableIds = new HashSet<>();
+        for (Receivable rec : recs) {
+            if (rec.getId() != null) {
+                receivableIds.add(rec.getId());
+            }
+        }
+        if (receivableIds.isEmpty()) {
+            return;
+        }
+        List<PaymentRecord> payments = paymentRecordMapper.selectList(
+                new LambdaQueryWrapper<PaymentRecord>()
+                        .in(PaymentRecord::getReceivableId, receivableIds));
+        Map<Long, List<String>> remarksByReceivable = new HashMap<>();
+        for (PaymentRecord payment : payments) {
+            if (payment.getReceivableId() == null) {
+                continue;
+            }
+            String remark = payment.getRemark();
+            if (remark == null || remark.isBlank()) {
+                continue;
+            }
+            remarksByReceivable
+                    .computeIfAbsent(payment.getReceivableId(), k -> new ArrayList<>())
+                    .add(remark.trim());
+        }
+        for (Receivable rec : recs) {
+            List<String> remarks = remarksByReceivable.get(rec.getId());
+            if (remarks != null && !remarks.isEmpty()) {
+                rec.setPaymentRemarks(String.join(";", remarks));
+            }
+        }
+    }
+
+    private void enrichPaymentRecords(List<PaymentRecord> payments) {
+        if (payments == null || payments.isEmpty()) {
+            return;
+        }
+        Set<Long> userIds = new HashSet<>();
+        for (PaymentRecord payment : payments) {
+            if (payment.getCreatedBy() != null) {
+                userIds.add(payment.getCreatedBy());
+            }
+        }
+        if (userIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> names = new HashMap<>();
+        List<User> users = userMapper.selectBatchIds(userIds);
+        for (User u : users) {
+            if (u != null && u.getId() != null) {
+                names.put(u.getId(), userDisplayName(u));
+            }
+        }
+        for (PaymentRecord payment : payments) {
+            if (payment.getCreatedBy() != null) {
+                payment.setCreatedByName(names.get(payment.getCreatedBy()));
+            }
+        }
+    }
+
+    private static String userDisplayName(User u) {
+        if (u.getRealName() != null && !u.getRealName().isBlank()) {
+            return u.getRealName().trim();
+        }
+        return u.getUsername() != null ? u.getUsername() : "";
+    }
+
+    private void updateInvoiceStatus(Long invoiceId) {
+        List<Receivable> recs = receivableMapper.selectList(
+                new LambdaQueryWrapper<Receivable>().eq(Receivable::getInvoiceId, invoiceId));
+        boolean allSettled = recs.stream().allMatch(r -> "SETTLED".equals(r.getStatus()));
+        boolean anyPartial = recs.stream().anyMatch(r -> "PARTIAL".equals(r.getStatus()));
+        boolean anyReceived = recs.stream().anyMatch(r ->
+                r.getReceivedAmount() != null && r.getReceivedAmount().compareTo(BigDecimal.ZERO) > 0);
+
+        Invoice inv = invoiceMapper.selectById(invoiceId);
+        if (inv == null) {
+            return;
+        }
+        if (allSettled) {
+            inv.setStatus("PAID");
+        } else if (anyPartial || anyReceived) {
+            inv.setStatus("PARTIAL");
+        } else {
+            inv.setStatus("PENDING");
+        }
+        invoiceMapper.updateById(inv);
+    }
+
+    private static String normalizePaymentMethod(String method) {
+        if (method == null || method.isBlank()) {
+            throw new BusinessException("Payment method is required");
+        }
+        String trimmed = method.trim();
+        if ("Bank Transfer".equalsIgnoreCase(trimmed)) {
+            return "Bank Transfer";
+        }
+        if ("Mpesa".equalsIgnoreCase(trimmed)) {
+            return "Mpesa";
+        }
+        if ("Cash".equalsIgnoreCase(trimmed)) {
+            return "Cash";
+        }
+        if ("Cheque".equalsIgnoreCase(trimmed)) {
+            return "Cheque";
+        }
+        return trimmed;
+    }
+
+    private static String resolveTransactionRef(String paymentMethod, String rawRef) {
+        if (METHOD_CASH.equalsIgnoreCase(paymentMethod)) {
+            return null;
+        }
+        if (rawRef == null || rawRef.isBlank()) {
+            return null;
+        }
+        return rawRef.trim().toUpperCase();
+    }
+}

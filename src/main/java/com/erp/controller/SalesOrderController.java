@@ -5,10 +5,11 @@ import com.erp.common.result.Result;
 import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CancelOrderRequest;
 import com.erp.dto.request.CreateOrderRequest;
+import com.erp.dto.response.OrderDetailData;
+import com.erp.dto.response.OrderPrintData;
 import com.erp.entity.ApprovalFlow;
 import com.erp.entity.SalesOrder;
 import com.erp.entity.SalesOrderItem;
-import com.erp.mapper.SalesOrderItemMapper;
 import com.erp.service.SalesOrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +24,6 @@ import java.util.List;
 public class SalesOrderController {
 
     private final SalesOrderService orderService;
-    private final SalesOrderItemMapper itemMapper;
 
     @PostMapping
     @PreAuthorize("@ss.hasPermi('erp:order:add')")
@@ -38,7 +38,7 @@ public class SalesOrderController {
     }
 
     @PostMapping("/{id}/approval")
-    @PreAuthorize("@ss.hasAnyPermi('erp:order:approve:first,erp:order:approve:final,erp:order:approve:finance,erp:order:approve:admin,erp:order:approve')")
+    @PreAuthorize("@ss.hasOrderApprove()")
     public Result<SalesOrder> approve(@PathVariable Long id,
                                       @RequestBody ApprovalRequest req) {
         return Result.success(orderService.handleApproval(id, req));
@@ -71,29 +71,34 @@ public class SalesOrderController {
         return Result.success(orderService.listPendingApprovals());
     }
 
-    /** Detail also allows list/outbound print roles (e.g. warehouse DN print). */
-    private static final String ORDER_VIEW =
-            "erp:order:query,erp:order:list:all,erp:order:list:mine,"
-                    + "erp:order:edit,erp:order:submit,erp:order:approve,erp:order:cancel,erp:order:confirm,erp:order:pending,"
-                    + "erp:outbound:print,erp:outbound:list";
-
     @GetMapping("/{id}")
-    @PreAuthorize("@ss.hasAnyPermi('" + ORDER_VIEW + "')")
+    @PreAuthorize("@ss.hasPermi('erp:order:query')")
     public Result<SalesOrder> detail(@PathVariable Long id) {
         return Result.success(orderService.getDetail(id));
     }
 
     @GetMapping("/{id}/items")
-    @PreAuthorize("@ss.hasAnyPermi('" + ORDER_VIEW + "')")
+    @PreAuthorize("@ss.hasPermi('erp:order:query')")
     public Result<List<SalesOrderItem>> items(@PathVariable Long id) {
-        orderService.assertOrderViewable(id);
-        return Result.success(itemMapper.findWithProductByOrderId(id));
+        return Result.success(orderService.listItemsWithProduct(id));
     }
 
     @GetMapping("/{id}/approvals")
-    @PreAuthorize("@ss.hasAnyPermi('" + ORDER_VIEW + "')")
+    @PreAuthorize("@ss.hasPermi('erp:order:query')")
     public Result<List<ApprovalFlow>> approvalHistory(@PathVariable Long id) {
         return Result.success(orderService.listApprovalHistory(id));
+    }
+
+    @GetMapping("/{id}/view")
+    @PreAuthorize("@ss.hasPermi('erp:order:query')")
+    public Result<OrderDetailData> view(@PathVariable Long id) {
+        return Result.success(orderService.getDetailData(id));
+    }
+
+    @GetMapping("/{id}/print")
+    @PreAuthorize("@ss.hasPermi('erp:order:query')")
+    public Result<OrderPrintData> print(@PathVariable Long id) {
+        return Result.success(orderService.getPrintData(id));
     }
 
     @PostMapping("/{id}/confirm")
