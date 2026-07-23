@@ -6,6 +6,7 @@ import com.erp.common.dto.PageQuery;
 import com.erp.common.dto.PageResult;
 import com.erp.common.result.Result;
 import com.erp.common.exception.BusinessException;
+import com.erp.dto.response.OutboundPrintData;
 import com.erp.entity.*;
 import com.erp.mapper.*;
 import com.erp.service.InventoryService;
@@ -111,7 +112,7 @@ public class OutboundController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("@ss.hasPermi('erp:outbound:list')")
+    @PreAuthorize("@ss.hasAnyPermi('erp:outbound:list,erp:outbound:print')")
     public Result<OutboundOrder> detail(@PathVariable Long id) {
         OutboundOrder dn = outboundMapper.selectById(id);
         if (dn != null) {
@@ -121,9 +122,37 @@ public class OutboundController {
     }
 
     @GetMapping("/{id}/items")
-    @PreAuthorize("@ss.hasPermi('erp:outbound:list')")
+    @PreAuthorize("@ss.hasAnyPermi('erp:outbound:list,erp:outbound:print')")
     public Result<List<OutboundItem>> items(@PathVariable Long id) {
         return Result.success(outboundItemMapper.findWithProductByOutboundId(id));
+    }
+
+    /**
+     * Delivery Note print payload — one call for DN + lines + order ref + ship-to customer.
+     * (POST /{id}/print only flips status to PRINTED.)
+     */
+    @GetMapping("/{id}/print")
+    @PreAuthorize("@ss.hasAnyPermi('erp:outbound:print,erp:outbound:list')")
+    public Result<OutboundPrintData> printData(@PathVariable Long id) {
+        OutboundOrder dn = outboundMapper.selectById(id);
+        if (dn == null) {
+            throw new BusinessException("Delivery note not found");
+        }
+        enrichOutboundOrders(List.of(dn));
+
+        List<OutboundItem> items = outboundItemMapper.findWithProductByOutboundId(id);
+
+        SalesOrder order = null;
+        if (dn.getOrderId() != null) {
+            order = orderMapper.selectById(dn.getOrderId());
+        }
+
+        Customer customer = null;
+        if (dn.getShipToCustomerId() != null) {
+            customer = customerMapper.selectById(dn.getShipToCustomerId());
+        }
+
+        return Result.success(new OutboundPrintData(dn, items, order, customer));
     }
 
     /** Warehouse marks as printed (ready to ship) */

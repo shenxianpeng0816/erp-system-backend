@@ -357,6 +357,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
      * SALES: only own orders. ADMIN: all.
      * Users with first/final approve perms: pending + post-approval pipeline.
      * FINANCE role (legacy): same pipeline. WAREHOUSE / INBOUND: all.
+     * Also: erp:order:list:all / outbound print|list (DN print & warehouse list).
      */
     private void assertCanViewOrder(SalesOrder order) {
         String role = SecurityUtil.currentRole();
@@ -377,6 +378,16 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             return;
         }
         if ("WAREHOUSE".equals(role) || "INBOUND".equals(role)) {
+            return;
+        }
+        // RBAC: warehouse-like custom roles, or list:all without legacy role string
+        if (permissionService.hasPermi("erp:order:list:all")
+                || permissionService.hasAnyPermi("erp:outbound:print,erp:outbound:list")) {
+            return;
+        }
+        if (permissionService.hasPermi("erp:order:list:mine")
+                && order.getSalesUserId() != null
+                && order.getSalesUserId().equals(uid)) {
             return;
         }
         throw new BusinessException("Access denied");

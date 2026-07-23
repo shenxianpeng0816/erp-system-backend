@@ -71,21 +71,27 @@ public class SalesOrderController {
         return Result.success(orderService.listPendingApprovals());
     }
 
+    /** Detail also allows list/outbound print roles (e.g. warehouse DN print). */
+    private static final String ORDER_VIEW =
+            "erp:order:query,erp:order:list:all,erp:order:list:mine,"
+                    + "erp:order:edit,erp:order:submit,erp:order:approve,erp:order:cancel,erp:order:confirm,erp:order:pending,"
+                    + "erp:outbound:print,erp:outbound:list";
+
     @GetMapping("/{id}")
-    @PreAuthorize("@ss.hasAnyPermi('erp:order:query,erp:order:edit,erp:order:submit,erp:order:approve,erp:order:cancel,erp:order:confirm,erp:order:pending')")
+    @PreAuthorize("@ss.hasAnyPermi('" + ORDER_VIEW + "')")
     public Result<SalesOrder> detail(@PathVariable Long id) {
         return Result.success(orderService.getDetail(id));
     }
 
     @GetMapping("/{id}/items")
-    @PreAuthorize("@ss.hasAnyPermi('erp:order:query,erp:order:edit,erp:order:submit,erp:order:approve,erp:order:cancel,erp:order:confirm,erp:order:pending')")
+    @PreAuthorize("@ss.hasAnyPermi('" + ORDER_VIEW + "')")
     public Result<List<SalesOrderItem>> items(@PathVariable Long id) {
         orderService.assertOrderViewable(id);
         return Result.success(itemMapper.findWithProductByOrderId(id));
     }
 
     @GetMapping("/{id}/approvals")
-    @PreAuthorize("@ss.hasAnyPermi('erp:order:query,erp:order:edit,erp:order:submit,erp:order:approve,erp:order:cancel,erp:order:confirm,erp:order:pending')")
+    @PreAuthorize("@ss.hasAnyPermi('" + ORDER_VIEW + "')")
     public Result<List<ApprovalFlow>> approvalHistory(@PathVariable Long id) {
         return Result.success(orderService.listApprovalHistory(id));
     }
