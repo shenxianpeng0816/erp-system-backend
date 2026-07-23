@@ -1,12 +1,14 @@
 package com.erp.controller;
 
 import com.erp.common.result.Result;
+import com.erp.dto.request.SaveRoleRequest;
 import com.erp.entity.SysMenu;
 import com.erp.entity.SysRole;
 import com.erp.mapper.SysMenuMapper;
 import com.erp.mapper.SysRoleMapper;
 import com.erp.mapper.SysUserRoleMapper;
 import com.erp.service.SysPermissionService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -27,8 +29,11 @@ public class SystemRbacController {
 
     @GetMapping("/roles")
     @PreAuthorize("@ss.hasPermi('erp:role:list')")
-    public Result<List<SysRole>> listRoles() {
-        return Result.success(permissionService.listRoles());
+    public Result<List<SysRole>> listRoles(
+            @RequestParam(defaultValue = "false") boolean includeDisabled) {
+        return Result.success(includeDisabled
+                ? permissionService.listRolesAll()
+                : permissionService.listRoles());
     }
 
     @GetMapping("/roles/{roleId}")
@@ -40,6 +45,26 @@ public class SystemRbacController {
         body.put("role", role);
         body.put("menuIds", menuIds);
         return Result.success(body);
+    }
+
+    @PostMapping("/roles")
+    @PreAuthorize("@ss.hasPermi('erp:role:edit')")
+    public Result<SysRole> createRole(@Valid @RequestBody SaveRoleRequest req) {
+        return Result.success(permissionService.createRole(req));
+    }
+
+    @PutMapping("/roles/{roleId}")
+    @PreAuthorize("@ss.hasPermi('erp:role:edit')")
+    public Result<SysRole> updateRole(@PathVariable Long roleId,
+                                      @Valid @RequestBody SaveRoleRequest req) {
+        return Result.success(permissionService.updateRole(roleId, req));
+    }
+
+    @DeleteMapping("/roles/{roleId}")
+    @PreAuthorize("@ss.hasPermi('erp:role:edit')")
+    public Result<Void> disableRole(@PathVariable Long roleId) {
+        permissionService.disableRole(roleId);
+        return Result.success();
     }
 
     @PutMapping("/roles/{roleId}/menus")

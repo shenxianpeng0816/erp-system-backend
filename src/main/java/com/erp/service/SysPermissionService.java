@@ -1,5 +1,6 @@
 package com.erp.service;
 
+import com.erp.dto.request.SaveRoleRequest;
 import com.erp.entity.SysMenu;
 import com.erp.entity.SysRole;
 import com.erp.entity.User;
@@ -20,6 +21,16 @@ public interface SysPermissionService {
     List<SysMenu> getRouters(Long userId);
 
     List<SysRole> listRoles();
+
+    /** Include disabled roles (admin UI). */
+    List<SysRole> listRolesAll();
+
+    SysRole createRole(SaveRoleRequest req);
+
+    SysRole updateRole(Long roleId, SaveRoleRequest req);
+
+    /** Soft-disable role (status=1). Built-in admin cannot be disabled. */
+    void disableRole(Long roleId);
 
     void assignUserRoles(Long userId, List<Long> roleIds);
 

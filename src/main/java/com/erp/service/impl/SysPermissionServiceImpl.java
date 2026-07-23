@@ -1,6 +1,8 @@
 package com.erp.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.erp.common.exception.BusinessException;
+import com.erp.dto.request.SaveRoleRequest;
 import com.erp.entity.*;
 import com.erp.mapper.SysMenuMapper;
 import com.erp.mapper.SysRoleMapper;
@@ -82,6 +84,113 @@ public class SysPermissionServiceImpl implements SysPermissionService {
         return roleMapper.selectList(new LambdaQueryWrapper<SysRole>()
                 .eq(SysRole::getStatus, "0")
                 .orderByAsc(SysRole::getRoleSort));
+    }
+
+    @Override
+    public List<SysRole> listRolesAll() {
+        return roleMapper.selectList(new LambdaQueryWrapper<SysRole>()
+                .orderByAsc(SysRole::getRoleSort, SysRole::getRoleId));
+    }
+
+    @Override
+    @Transactional
+    public SysRole createRole(SaveRoleRequest req) {
+        String key = normalizeRoleKey(req.getRoleKey());
+        assertRoleKeyAvailable(key, null);
+        SysRole role = new SysRole();
+        role.setRoleName(req.getRoleName().trim());
+        role.setRoleKey(key);
+        role.setRoleSort(req.getRoleSort() != null ? req.getRoleSort() : nextSort());
+        role.setStatus(normalizeStatus(req.getStatus()));
+        role.setRemark(blankToNull(req.getRemark()));
+        roleMapper.insert(role);
+        return roleMapper.selectById(role.getRoleId());
+    }
+
+    @Override
+    @Transactional
+    public SysRole updateRole(Long roleId, SaveRoleRequest req) {
+        SysRole existing = requireRole(roleId);
+        String key = normalizeRoleKey(req.getRoleKey());
+        // Built-in admin key is locked
+        if ("admin".equalsIgnoreCase(existing.getRoleKey()) && !"admin".equals(key)) {
+            throw new BusinessException("Cannot change the administrator role key");
+        }
+        assertRoleKeyAvailable(key, roleId);
+        existing.setRoleName(req.getRoleName().trim());
+        existing.setRoleKey(key);
+        if (req.getRoleSort() != null) {
+            existing.setRoleSort(req.getRoleSort());
+        }
+        if (req.getStatus() != null && !req.getStatus().isBlank()) {
+            if ("admin".equalsIgnoreCase(existing.getRoleKey()) && "1".equals(normalizeStatus(req.getStatus()))) {
+                throw new BusinessException("Cannot disable the administrator role");
+            }
+            existing.setStatus(normalizeStatus(req.getStatus()));
+        }
+        existing.setRemark(blankToNull(req.getRemark()));
+        roleMapper.updateById(existing);
+        return roleMapper.selectById(roleId);
+    }
+
+    @Override
+    @Transactional
+    public void disableRole(Long roleId) {
+        SysRole existing = requireRole(roleId);
+        if ("admin".equalsIgnoreCase(existing.getRoleKey())) {
+            throw new BusinessException("Cannot disable the administrator role");
+        }
+        existing.setStatus("1");
+        roleMapper.updateById(existing);
+        // Drop role-menu bindings so disabled roles grant nothing if somehow re-linked
+        roleMenuMapper.deleteByRoleId(roleId);
+    }
+
+    private SysRole requireRole(Long roleId) {
+        SysRole role = roleMapper.selectById(roleId);
+        if (role == null) {
+            throw new BusinessException("Role not found");
+        }
+        return role;
+    }
+
+    private String normalizeRoleKey(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new BusinessException("Role key is required");
+        }
+        String key = raw.trim().toLowerCase();
+        if (!key.matches("^[a-z][a-z0-9_]{0,49}$")) {
+            throw new BusinessException("Role key must start with a letter and contain only a-z, 0-9, underscore");
+        }
+        return key;
+    }
+
+    private void assertRoleKeyAvailable(String key, Long excludeRoleId) {
+        LambdaQueryWrapper<SysRole> q = new LambdaQueryWrapper<SysRole>().eq(SysRole::getRoleKey, key);
+        if (excludeRoleId != null) {
+            q.ne(SysRole::getRoleId, excludeRoleId);
+        }
+        if (roleMapper.selectCount(q) > 0) {
+            throw new BusinessException("Role key already exists: " + key);
+        }
+    }
+
+    private int nextSort() {
+        List<SysRole> all = roleMapper.selectList(new LambdaQueryWrapper<SysRole>()
+                .orderByDesc(SysRole::getRoleSort)
+                .last("LIMIT 1"));
+        if (all.isEmpty() || all.get(0).getRoleSort() == null) return 10;
+        return all.get(0).getRoleSort() + 1;
+    }
+
+    private static String normalizeStatus(String status) {
+        if (status == null || status.isBlank()) return "0";
+        return "1".equals(status.trim()) ? "1" : "0";
+    }
+
+    private static String blankToNull(String s) {
+        if (s == null || s.isBlank()) return null;
+        return s.trim();
     }
 
     @Override
