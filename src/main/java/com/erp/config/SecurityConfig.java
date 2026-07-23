@@ -78,7 +78,7 @@ public class SecurityConfig {
                 .authenticationEntryPoint((request, response, authException) ->
                         writeJsonError(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized"))
                 .accessDeniedHandler((request, response, accessDeniedException) ->
-                        writeJsonError(response, HttpServletResponse.SC_FORBIDDEN, "Access denied"))
+                        writeJsonError(response, HttpServletResponse.SC_FORBIDDEN, "权限不足"))
             )
             .addFilterBefore(jwtAuthFilter(), UsernamePasswordAuthenticationFilter.class);
         return http.build();

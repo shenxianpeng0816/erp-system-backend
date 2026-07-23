@@ -21,7 +21,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public Result<?> handleAccessDenied(AccessDeniedException e) {
         log.warn("Access denied: {}", e.getMessage());
-        return Result.fail(403, "Access denied");
+        return Result.fail(403, "权限不足");
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, BindException.class})

@@ -93,6 +93,7 @@ public class UserController {
     }
 
     @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
     public Result<User> me() {
         User u = SecurityUtil.currentUser();
         permissionService.enrichUser(u);

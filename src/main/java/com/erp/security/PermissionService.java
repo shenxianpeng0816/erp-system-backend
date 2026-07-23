@@ -22,8 +22,7 @@ public class PermissionService {
         User user = SecurityUtil.currentUser();
         Set<String> perms = user.getPermissions();
         if (CollectionUtils.isEmpty(perms)) {
-            // Admin legacy fallback
-            return "ADMIN".equalsIgnoreCase(user.getRole());
+            return false;
         }
         return perms.contains(ALL) || perms.contains(permission.trim());
     }

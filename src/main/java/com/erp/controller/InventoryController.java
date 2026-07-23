@@ -35,6 +35,7 @@ public class InventoryController {
     private final WarehouseMapper warehouseMapper;
 
     @GetMapping
+    @PreAuthorize("@ss.hasPermi('erp:inventory:list')")
     public Result<List<Inventory>> list(
             @RequestParam(required = false) Long warehouseId,
             @RequestParam(required = false) String countryCode) {
@@ -133,6 +134,7 @@ public class InventoryController {
     }
 
     @GetMapping("/products")
+    @PreAuthorize("@ss.hasAnyPermi('erp:inventory:list,erp:order:add,erp:order:edit,erp:inbound:add,erp:inbound:edit,erp:transfer:add')")
     public Result<List<Product>> products(
             @RequestParam(required = false) Long warehouseId,
             @RequestParam(required = false) String countryCode) {

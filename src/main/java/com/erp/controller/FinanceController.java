@@ -84,6 +84,7 @@ public class FinanceController {
     }
 
     @GetMapping("/invoices/{id}")
+    @PreAuthorize("@ss.hasPermi('erp:finance:invoice:list')")
     public Result<Invoice> invoiceDetail(@PathVariable Long id) {
         Invoice invoice = invoiceMapper.selectById(id);
         if (invoice != null) {

@@ -111,6 +111,7 @@ public class OutboundController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("@ss.hasPermi('erp:outbound:list')")
     public Result<OutboundOrder> detail(@PathVariable Long id) {
         OutboundOrder dn = outboundMapper.selectById(id);
         if (dn != null) {
@@ -120,6 +121,7 @@ public class OutboundController {
     }
 
     @GetMapping("/{id}/items")
+    @PreAuthorize("@ss.hasPermi('erp:outbound:list')")
     public Result<List<OutboundItem>> items(@PathVariable Long id) {
         return Result.success(outboundItemMapper.findWithProductByOutboundId(id));
     }

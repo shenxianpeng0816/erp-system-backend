@@ -33,6 +33,7 @@ public class CustomerController {
 
     /** Active customers only; SALES scope = own {@code created_by} */
     @GetMapping("/search")
+    @PreAuthorize("@ss.hasAnyPermi('erp:customer:list,erp:customer:add,erp:customer:edit,erp:order:add,erp:order:edit')")
     public Result<List<Customer>> search(@RequestParam String keyword) {
         Long createdByFilter = "SALES".equals(SecurityUtil.currentRole()) ? SecurityUtil.currentUserId() : null;
         return Result.success(customerMapper.searchByKeyword(keyword, createdByFilter));
@@ -44,6 +45,7 @@ public class CustomerController {
      * Optional {@code createdBy} filters by creator (ignored for SALES — always scoped to self).
      */
     @GetMapping
+    @PreAuthorize("@ss.hasPermi('erp:customer:list')")
     public Result<PageResult<Customer>> list(
             @RequestParam(required = false) Boolean includeDeleted,
             @RequestParam(required = false) Long createdBy,
@@ -59,6 +61,7 @@ public class CustomerController {
 
     /** Active customers for order form dropdowns (no pagination). */
     @GetMapping("/options")
+    @PreAuthorize("@ss.hasAnyPermi('erp:customer:list,erp:order:add,erp:order:edit')")
     public Result<List<Customer>> options() {
         List<Customer> list = customerMapper.selectList(customerQuery(false, null, null));
         return Result.success(list);
@@ -89,6 +92,7 @@ public class CustomerController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("@ss.hasAnyPermi('erp:customer:list,erp:customer:edit,erp:order:add,erp:order:edit')")
     public Result<Customer> get(@PathVariable Long id) {
         Customer c = customerMapper.selectById(id);
         if (c == null) {
