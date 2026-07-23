@@ -76,7 +76,7 @@ public class InboundController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("@ss.hasPermi('erp:inbound:query')")
+    @PreAuthorize("@ss.hasAnyPermi('erp:inbound:query,erp:inbound:edit,erp:inbound:confirm,erp:inbound:reject')")
     public Result<InboundOrder> detail(@PathVariable Long id) {
         InboundOrder order = inboundMapper.selectById(id);
         if (order != null) {
@@ -87,7 +87,7 @@ public class InboundController {
     }
 
     @GetMapping("/{id}/items")
-    @PreAuthorize("@ss.hasPermi('erp:inbound:query')")
+    @PreAuthorize("@ss.hasAnyPermi('erp:inbound:query,erp:inbound:edit,erp:inbound:confirm,erp:inbound:reject')")
     public Result<List<InboundItem>> items(@PathVariable Long id) {
         return Result.success(inboundItemMapper.selectList(
                 new LambdaQueryWrapper<InboundItem>().eq(InboundItem::getInboundId, id)));

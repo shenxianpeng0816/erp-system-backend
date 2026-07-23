@@ -72,20 +72,20 @@ public class SalesOrderController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("@ss.hasAnyPermi('erp:order:query,erp:order:list:mine,erp:order:list:all,erp:order:pending')")
+    @PreAuthorize("@ss.hasAnyPermi('erp:order:query,erp:order:edit,erp:order:submit,erp:order:approve,erp:order:cancel,erp:order:confirm,erp:order:pending')")
     public Result<SalesOrder> detail(@PathVariable Long id) {
         return Result.success(orderService.getDetail(id));
     }
 
     @GetMapping("/{id}/items")
-    @PreAuthorize("@ss.hasAnyPermi('erp:order:query,erp:order:list:mine,erp:order:list:all,erp:order:pending')")
+    @PreAuthorize("@ss.hasAnyPermi('erp:order:query,erp:order:edit,erp:order:submit,erp:order:approve,erp:order:cancel,erp:order:confirm,erp:order:pending')")
     public Result<List<SalesOrderItem>> items(@PathVariable Long id) {
         orderService.assertOrderViewable(id);
         return Result.success(itemMapper.findWithProductByOrderId(id));
     }
 
     @GetMapping("/{id}/approvals")
-    @PreAuthorize("@ss.hasAnyPermi('erp:order:query,erp:order:list:mine,erp:order:list:all,erp:order:pending')")
+    @PreAuthorize("@ss.hasAnyPermi('erp:order:query,erp:order:edit,erp:order:submit,erp:order:approve,erp:order:cancel,erp:order:confirm,erp:order:pending')")
     public Result<List<ApprovalFlow>> approvalHistory(@PathVariable Long id) {
         return Result.success(orderService.listApprovalHistory(id));
     }
