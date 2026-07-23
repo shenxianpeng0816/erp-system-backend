@@ -218,7 +218,7 @@ public class OutboundController {
             List<Customer> customers = customerMapper.selectList(
                     new LambdaQueryWrapper<Customer>().in(Customer::getId, customerIds));
             for (Customer c : customers) {
-                customerNames.put(c.getId(), c.getName());
+                customerNames.put(c.getId(), c.getShopName());
             }
         }
 

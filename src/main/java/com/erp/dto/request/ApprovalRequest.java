@@ -4,7 +4,7 @@ import lombok.Data;
 
 @Data
 public class ApprovalRequest {
-    private String action;     // APPROVE / REJECT / REDIRECT
+    /** APPROVE / REJECT */
+    private String action;
     private String comment;
-    private Long redirectTo;   // only when action = REDIRECT
 }

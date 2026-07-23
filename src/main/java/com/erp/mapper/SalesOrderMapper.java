@@ -13,7 +13,11 @@ public interface SalesOrderMapper extends BaseMapper<SalesOrder> {
     @Select("SELECT * FROM sales_order WHERE sales_user_id = #{userId} ORDER BY created_at DESC")
     List<SalesOrder> findBySalesUser(Long userId);
 
-    @Select("SELECT * FROM sales_order WHERE status = 'PENDING_APPROVAL' ORDER BY created_at ASC")
+    @Select("""
+            SELECT * FROM sales_order
+            WHERE status IN ('PENDING_FINANCE_APPROVAL', 'PENDING_ADMIN_APPROVAL', 'PENDING_APPROVAL')
+            ORDER BY created_at ASC
+            """)
     List<SalesOrder> findPendingApproval();
 
     @Select("SELECT * FROM sales_order ORDER BY created_at DESC")

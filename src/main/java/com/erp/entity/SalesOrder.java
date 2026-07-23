@@ -28,7 +28,8 @@ public class SalesOrder {
     private String shipToCustomerName;
     @TableField(exist = false)
     private String billToCustomerName;
-    private String status; // DRAFT/PENDING_APPROVAL/APPROVED/REJECTED/SHIPPED/CONFIRMED/CANCELLED
+    /** DRAFT / PENDING_FINANCE_APPROVAL / PENDING_ADMIN_APPROVAL / APPROVED / REJECTED / SHIPPED / CONFIRMED / CANCELLED */
+    private String status;
     private BigDecimal totalAmount;
     private String paymentMethod;
     private String priceTerm;

@@ -12,7 +12,10 @@ public class ApprovalFlow {
     private Long id;
     private Long orderId;
     private Integer step;
+    /** Null while PENDING (unassigned); set to actor on approve/reject. */
     private Long approverId;
+    /** System role snapshot at action time, e.g. FINANCE or admin,sales. */
+    private String approverRole;
     /** Filled when listing history; not persisted. */
     @TableField(exist = false)
     private String approverName;

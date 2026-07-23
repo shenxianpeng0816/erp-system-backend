@@ -27,7 +27,7 @@ public interface SalesOrderService {
     /** Deletes draft / pending / rejected orders (no invoice). Admin or order owner (sales). */
     void deleteOrder(Long orderId);
 
-    /** Rewrites header + line items while status is {@code DRAFT} or {@code PENDING_APPROVAL}. Admin or order owner. */
+    /** Rewrites header + line items while status is DRAFT (sales) or draft/pending (admin). */
     SalesOrder updatePendingOrder(Long orderId, CreateOrderRequest req);
 
     /** Cancel an approved/shipped order, void linked docs, restore inventory when shipped. */

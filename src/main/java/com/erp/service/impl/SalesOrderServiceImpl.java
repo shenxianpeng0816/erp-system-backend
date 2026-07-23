@@ -11,6 +11,7 @@ import com.erp.dto.request.CancelOrderRequest;
 import com.erp.dto.request.CreateOrderRequest;
 import com.erp.entity.*;
 import com.erp.mapper.*;
+import com.erp.security.PermissionService;
 import com.erp.service.DocSequenceService;
 import com.erp.service.InventoryService;
 import com.erp.service.SalesOrderService;
@@ -20,16 +21,19 @@ import com.erp.util.SecurityUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -49,6 +53,16 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final ProductMapper productMapper;
     private final WarehouseService warehouseService;
     private final WarehouseMapper warehouseMapper;
+    private final PermissionService permissionService;
+
+    private static final String STATUS_DRAFT = "DRAFT";
+    private static final String STATUS_PENDING_FINANCE = "PENDING_FINANCE_APPROVAL";
+    private static final String STATUS_PENDING_ADMIN = "PENDING_ADMIN_APPROVAL";
+    private static final String STATUS_PENDING_LEGACY = "PENDING_APPROVAL";
+    private static final String STATUS_APPROVED = "APPROVED";
+    private static final String PERM_APPROVE_FINANCE = "erp:order:approve:finance";
+    private static final String PERM_APPROVE_ADMIN = "erp:order:approve:admin";
+    private static final String PERM_APPROVE_LEGACY = "erp:order:approve";
 
     @Override
     @Transactional
@@ -112,25 +126,16 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     @Transactional
     public SalesOrder submitOrder(Long orderId) {
         SalesOrder order = getAndValidateOwner(orderId);
-        if (!"DRAFT".equals(order.getStatus())) throw new BusinessException("Only DRAFT orders can be submitted");
-        order.setStatus("PENDING_APPROVAL");
-        orderMapper.updateById(order);
-
-        User defaultApprover = userMapper.selectOne(
-                new LambdaQueryWrapper<User>()
-                        .eq(User::getRole, "ADMIN")
-                        .orderByAsc(User::getId)
-                        .last("LIMIT 1"));
-        if (defaultApprover == null) {
-            throw new BusinessException(
-                    "No active ADMIN user found. Create at least one admin account before submitting orders for approval.");
+        if (!STATUS_DRAFT.equals(order.getStatus())) {
+            throw new BusinessException("Only DRAFT orders can be submitted");
         }
 
-        ApprovalFlow flow = new ApprovalFlow();
-        flow.setOrderId(orderId);
-        flow.setStep(1);
-        flow.setApproverId(defaultApprover.getId());
-        flow.setStatus("PENDING");
+        order.setStatus(STATUS_PENDING_FINANCE);
+        order.setRejectReason(null);
+        orderMapper.updateById(order);
+
+        // Unassigned pending step — any user with first-approve permission may act
+        ApprovalFlow flow = newApprovalStep(orderId, nextApprovalStep(orderId));
         approvalMapper.insert(flow);
         return order;
     }
@@ -138,10 +143,24 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     @Override
     @Transactional
     public SalesOrder handleApproval(Long orderId, ApprovalRequest req) {
+        if (req == null || !StringUtils.hasText(req.getAction())) {
+            throw new BusinessException("Approval action is required");
+        }
+        String action = req.getAction().trim().toUpperCase();
+        if (!"APPROVE".equals(action) && !"REJECT".equals(action)) {
+            throw new BusinessException("Invalid action. Allowed: APPROVE, REJECT");
+        }
+
         SalesOrder order = orderMapper.selectById(orderId);
         if (order == null) throw new BusinessException("Order not found");
-        if (!"PENDING_APPROVAL".equals(order.getStatus()))
-            throw new BusinessException("Order is not pending approval");
+
+        String status = order.getStatus();
+        // Legacy single-step pending is treated as admin final
+        if (STATUS_PENDING_LEGACY.equals(status)) {
+            status = STATUS_PENDING_ADMIN;
+            order.setStatus(STATUS_PENDING_ADMIN);
+        }
+        assertCanActOnPendingStatus(status);
 
         ApprovalFlow flow = approvalMapper.selectOne(
                 new LambdaQueryWrapper<ApprovalFlow>()
@@ -151,34 +170,38 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                         .last("LIMIT 1"));
         if (flow == null) throw new BusinessException("No pending approval step found");
 
+        User actor = SecurityUtil.currentUser();
+        flow.setApproverId(actor.getId());
+        flow.setApproverRole(resolveActorRoleSnapshot(actor));
         flow.setActedAt(LocalDateTime.now());
         flow.setComment(req.getComment());
 
-        switch (req.getAction().toUpperCase()) {
-            case "APPROVE" -> {
-                flow.setStatus("APPROVED");
-                order.setStatus("APPROVED");
-                // Auto-generate Invoice and Outbound Order
-                generateInvoice(order);
-                generateOutboundOrder(order);
+        if ("REJECT".equals(action)) {
+            if (!StringUtils.hasText(req.getComment())) {
+                throw new BusinessException("Reject reason is required");
             }
-            case "REJECT" -> {
-                flow.setStatus("REJECTED");
-                order.setStatus("REJECTED");
-                order.setRejectReason(req.getComment());
-            }
-            case "REDIRECT" -> {
-                if (req.getRedirectTo() == null) throw new BusinessException("Redirect target user is required");
-                flow.setStatus("REDIRECTED");
-                flow.setRedirectTo(req.getRedirectTo());
-                // Create next step
-                ApprovalFlow next = new ApprovalFlow();
-                next.setOrderId(orderId);
-                next.setStep(flow.getStep() + 1);
-                next.setApproverId(req.getRedirectTo());
-                next.setStatus("PENDING");
-                approvalMapper.insert(next);
-            }
+            flow.setStatus("REJECTED");
+            order.setStatus(STATUS_DRAFT);
+            order.setRejectReason(req.getComment().trim());
+            approvalMapper.updateById(flow);
+            orderMapper.updateById(order);
+            return order;
+        }
+
+        // APPROVE
+        flow.setStatus("APPROVED");
+        if (STATUS_PENDING_FINANCE.equals(status)) {
+            ApprovalFlow next = newApprovalStep(orderId, flow.getStep() + 1);
+            approvalMapper.insert(next);
+            order.setStatus(STATUS_PENDING_ADMIN);
+            order.setRejectReason(null);
+        } else if (STATUS_PENDING_ADMIN.equals(status)) {
+            order.setStatus(STATUS_APPROVED);
+            order.setRejectReason(null);
+            generateInvoice(order);
+            generateOutboundOrder(order);
+        } else {
+            throw new BusinessException("Order is not pending approval");
         }
 
         approvalMapper.updateById(flow);
@@ -245,8 +268,11 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     @Override
     public List<SalesOrder> listPendingApprovals() {
         List<SalesOrder> list = orderMapper.findPendingApproval();
-        enrichCustomerNames(list);
-        return list;
+        List<SalesOrder> filtered = list.stream()
+                .filter(o -> isPendingVisibleToCurrentUser(normalizePendingStatus(o.getStatus())))
+                .toList();
+        enrichCustomerNames(filtered);
+        return filtered;
     }
 
     @Override
@@ -331,8 +357,9 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     }
 
     /**
-     * SALES: only own orders. ADMIN: all. FINANCE: post-approval pipeline (e.g. from invoice).
-     * WAREHOUSE / INBOUND: all (ops / outbound / inbound). Others: no access.
+     * SALES: only own orders. ADMIN: all.
+     * Users with first/final approve perms: pending + post-approval pipeline.
+     * FINANCE role (legacy): same pipeline. WAREHOUSE / INBOUND: all.
      */
     private void assertCanViewOrder(SalesOrder order) {
         String role = SecurityUtil.currentRole();
@@ -346,26 +373,13 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             }
             return;
         }
-        if ("FINANCE".equals(role)) {
-            if (isFinanceViewableStatus(order.getStatus())) {
-                return;
-            }
-            throw new BusinessException("Access denied");
+        if (canViewViaApprovalPermission(order.getStatus())) {
+            return;
+        }
+        if ("FINANCE".equals(role) && isApprovalPipelineStatus(order.getStatus())) {
+            return;
         }
         if ("WAREHOUSE".equals(role) || "INBOUND".equals(role)) {
-            return;
-        }
-        throw new BusinessException("Access denied");
-    }
-
-    /** Admin may modify any order; sales may modify only own orders. */
-    private void assertAdminOrOrderOwner(SalesOrder order) {
-        String role = SecurityUtil.currentRole();
-        Long uid = SecurityUtil.currentUserId();
-        if ("ADMIN".equals(role)) {
-            return;
-        }
-        if ("SALES".equals(role) && order.getSalesUserId().equals(uid)) {
             return;
         }
         throw new BusinessException("Access denied");
@@ -411,10 +425,25 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         return flows;
     }
 
-    /** After approval: finance can open order (e.g. linked from Finance module). */
-    private static boolean isFinanceViewableStatus(String status) {
+    /** Pending approvals + post-approval pipeline (invoice / outbound linked). */
+    private static boolean isApprovalPipelineStatus(String status) {
         if (status == null) return false;
-        return "APPROVED".equals(status) || "SHIPPED".equals(status) || "CONFIRMED".equals(status);
+        return STATUS_PENDING_FINANCE.equals(status)
+                || STATUS_PENDING_ADMIN.equals(status)
+                || STATUS_PENDING_LEGACY.equals(status)
+                || STATUS_APPROVED.equals(status)
+                || "SHIPPED".equals(status)
+                || "CONFIRMED".equals(status);
+    }
+
+    private boolean canViewViaApprovalPermission(String status) {
+        boolean hasFirst = permissionService.hasPermi(PERM_APPROVE_FINANCE);
+        boolean hasFinal = permissionService.hasPermi(PERM_APPROVE_ADMIN)
+                || permissionService.hasPermi(PERM_APPROVE_LEGACY);
+        if (!hasFirst && !hasFinal) {
+            return false;
+        }
+        return isApprovalPipelineStatus(status);
     }
 
     @Override
@@ -440,7 +469,11 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             throw new BusinessException("Access denied");
         }
         String st = order.getStatus();
-        if (!"DRAFT".equals(st) && !"PENDING_APPROVAL".equals(st) && !"REJECTED".equals(st)) {
+        if (!STATUS_DRAFT.equals(st)
+                && !STATUS_PENDING_FINANCE.equals(st)
+                && !STATUS_PENDING_ADMIN.equals(st)
+                && !STATUS_PENDING_LEGACY.equals(st)
+                && !"REJECTED".equals(st)) {
             throw new BusinessException("Only draft, pending approval, or rejected orders can be deleted");
         }
         approvalMapper.delete(
@@ -453,10 +486,26 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     public SalesOrder updatePendingOrder(Long orderId, CreateOrderRequest req) {
         SalesOrder order = orderMapper.selectById(orderId);
         if (order == null) throw new BusinessException("Order not found");
-        if (!"PENDING_APPROVAL".equals(order.getStatus()) && !"DRAFT".equals(order.getStatus())) {
+
+        String st = order.getStatus();
+        boolean pending = STATUS_PENDING_FINANCE.equals(st)
+                || STATUS_PENDING_ADMIN.equals(st)
+                || STATUS_PENDING_LEGACY.equals(st);
+        if (!STATUS_DRAFT.equals(st) && !pending) {
             throw new BusinessException("Only draft or pending approval orders can be edited");
         }
-        assertAdminOrOrderOwner(order);
+
+        String role = SecurityUtil.currentRole();
+        Long uid = SecurityUtil.currentUserId();
+        if ("ADMIN".equals(role)) {
+            // Admin may edit draft and pending
+        } else if ("SALES".equals(role) && order.getSalesUserId().equals(uid)) {
+            if (!STATUS_DRAFT.equals(st)) {
+                throw new BusinessException("Sales can only edit draft orders; wait for rejection or ask admin");
+            }
+        } else {
+            throw new BusinessException("Access denied");
+        }
 
         order.setShipToCustomerId(req.getShipToCustomerId());
         order.setBillToCustomerId(req.getBillToCustomerId());
@@ -698,6 +747,88 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         if (!order.getSalesUserId().equals(SecurityUtil.currentUserId()))
             throw new BusinessException("Access denied");
         return order;
+    }
+
+    private void assertCanActOnPendingStatus(String status) {
+        if (STATUS_PENDING_FINANCE.equals(status)) {
+            if (!permissionService.hasPermi(PERM_APPROVE_FINANCE)) {
+                throw new BusinessException("First approval permission required");
+            }
+            return;
+        }
+        if (STATUS_PENDING_ADMIN.equals(status)) {
+            if (!permissionService.hasPermi(PERM_APPROVE_ADMIN)
+                    && !permissionService.hasPermi(PERM_APPROVE_LEGACY)) {
+                throw new BusinessException("Final approval permission required");
+            }
+            return;
+        }
+        throw new BusinessException("Order is not pending approval");
+    }
+
+    private boolean isPendingVisibleToCurrentUser(String normalizedStatus) {
+        if (STATUS_PENDING_FINANCE.equals(normalizedStatus)) {
+            return permissionService.hasPermi(PERM_APPROVE_FINANCE);
+        }
+        if (STATUS_PENDING_ADMIN.equals(normalizedStatus)) {
+            return permissionService.hasPermi(PERM_APPROVE_ADMIN)
+                    || permissionService.hasPermi(PERM_APPROVE_LEGACY);
+        }
+        return false;
+    }
+
+    private static String normalizePendingStatus(String status) {
+        if (STATUS_PENDING_LEGACY.equals(status)) {
+            return STATUS_PENDING_ADMIN;
+        }
+        return status;
+    }
+
+    private ApprovalFlow newApprovalStep(Long orderId, int step) {
+        ApprovalFlow flow = new ApprovalFlow();
+        flow.setOrderId(orderId);
+        flow.setStep(step);
+        flow.setApproverId(null);
+        flow.setApproverRole(null);
+        flow.setStatus("PENDING");
+        return flow;
+    }
+
+    private int nextApprovalStep(Long orderId) {
+        List<ApprovalFlow> existing = approvalMapper.selectList(
+                new LambdaQueryWrapper<ApprovalFlow>()
+                        .eq(ApprovalFlow::getOrderId, orderId)
+                        .orderByDesc(ApprovalFlow::getStep)
+                        .last("LIMIT 1"));
+        if (existing.isEmpty() || existing.get(0).getStep() == null) {
+            return 1;
+        }
+        return existing.get(0).getStep() + 1;
+    }
+
+    /**
+     * Snapshot of system role keys at action time for audit trail.
+     * Prefers RBAC {@code sys_role.role_key}; falls back to legacy {@code user.role}.
+     */
+    private static String resolveActorRoleSnapshot(User user) {
+        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        if (user.getRoles() != null) {
+            for (SysRole r : user.getRoles()) {
+                if (r == null) continue;
+                if (StringUtils.hasText(r.getRoleKey())) {
+                    keys.add(r.getRoleKey().trim().toUpperCase());
+                } else if (StringUtils.hasText(r.getRoleName())) {
+                    keys.add(r.getRoleName().trim());
+                }
+            }
+        }
+        if (keys.isEmpty() && StringUtils.hasText(user.getRole())) {
+            keys.add(user.getRole().trim().toUpperCase());
+        }
+        if (keys.isEmpty()) {
+            return "UNKNOWN";
+        }
+        return keys.stream().collect(Collectors.joining(","));
     }
 
     private void generateInvoice(SalesOrder order) {

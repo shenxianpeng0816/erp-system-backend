@@ -38,7 +38,7 @@ public class SalesOrderController {
     }
 
     @PostMapping("/{id}/approval")
-    @PreAuthorize("@ss.hasPermi('erp:order:approve')")
+    @PreAuthorize("@ss.hasAnyPermi('erp:order:approve:finance,erp:order:approve:admin,erp:order:approve')")
     public Result<SalesOrder> approve(@PathVariable Long id,
                                       @RequestBody ApprovalRequest req) {
         return Result.success(orderService.handleApproval(id, req));
