@@ -368,6 +368,33 @@ public class FinanceController {
         return Result.success(receivableMapper.selectById(receivableId));
     }
 
+    /** Delete a payment record and recalculate receivable totals from remaining payments. */
+    @DeleteMapping("/receivables/{receivableId}/payments/{paymentId}")
+    @PreAuthorize("@ss.hasPermi('erp:finance:pay:remove')")
+    @Transactional
+    public Result<Receivable> deletePayment(@PathVariable Long receivableId,
+                                            @PathVariable Long paymentId) {
+        Receivable rec = receivableMapper.selectById(receivableId);
+        if (rec == null) throw new BusinessException("Receivable not found");
+        if ("CANCELLED".equals(rec.getStatus())) {
+            throw new BusinessException("Receivable is cancelled");
+        }
+
+        PaymentRecord existing = paymentRecordMapper.selectById(paymentId);
+        if (existing == null || !receivableId.equals(existing.getReceivableId())) {
+            throw new BusinessException("Payment record not found");
+        }
+
+        Invoice invCheck = invoiceMapper.selectById(rec.getInvoiceId());
+        if (invCheck != null && "CANCELLED".equals(invCheck.getStatus())) {
+            throw new BusinessException("Invoice is cancelled");
+        }
+
+        paymentRecordMapper.deleteById(paymentId);
+        recalculateReceivable(receivableId);
+        return Result.success(receivableMapper.selectById(receivableId));
+    }
+
     private record PaymentAmount(int qty, BigDecimal amount) {}
 
     private PaymentAmount resolvePaymentQtyAndAmount(Receivable rec, PaymentRequest req, int maxQty) {
