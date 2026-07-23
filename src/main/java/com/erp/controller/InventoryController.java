@@ -1,6 +1,7 @@
 package com.erp.controller;
 
 import com.erp.common.result.Result;
+import com.erp.dto.response.InventoryFormOptions;
 import com.erp.entity.Inventory;
 import com.erp.entity.InventoryLog;
 import com.erp.entity.Product;
@@ -19,6 +20,13 @@ public class InventoryController {
 
     private final InventoryQueryService inventoryQueryService;
     private final ProductService productService;
+
+    @GetMapping("/form-options")
+    @PreAuthorize("@ss.hasPermi('erp:inventory:list')")
+    public Result<InventoryFormOptions> formOptions(
+            @RequestParam(required = false) String countryCode) {
+        return Result.success(inventoryQueryService.getFormOptions(countryCode));
+    }
 
     @GetMapping
     @PreAuthorize("@ss.hasPermi('erp:inventory:list')")

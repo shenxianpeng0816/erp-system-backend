@@ -4,6 +4,7 @@ import com.erp.common.dto.PageResult;
 import com.erp.common.result.Result;
 import com.erp.dto.request.CreateInboundRequest;
 import com.erp.dto.request.RejectInboundRequest;
+import com.erp.dto.response.InboundFormOptions;
 import com.erp.entity.InboundItem;
 import com.erp.entity.InboundOrder;
 import com.erp.service.InboundService;
@@ -19,6 +20,12 @@ import java.util.List;
 public class InboundController {
 
     private final InboundService inboundService;
+
+    @GetMapping("/form-options")
+    @PreAuthorize("@ss.hasPermi('erp:inbound:list')")
+    public Result<InboundFormOptions> formOptions(@RequestParam(required = false) Long warehouseId) {
+        return Result.success(inboundService.getFormOptions(warehouseId));
+    }
 
     @GetMapping
     @PreAuthorize("@ss.hasPermi('erp:inbound:list')")

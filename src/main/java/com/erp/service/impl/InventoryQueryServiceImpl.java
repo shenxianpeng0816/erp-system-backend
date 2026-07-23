@@ -3,6 +3,7 @@ package com.erp.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.erp.common.enums.CountryEnum;
 import com.erp.common.exception.BusinessException;
+import com.erp.dto.response.InventoryFormOptions;
 import com.erp.entity.Inventory;
 import com.erp.entity.InventoryLog;
 import com.erp.entity.Product;
@@ -12,6 +13,7 @@ import com.erp.mapper.InventoryMapper;
 import com.erp.mapper.ProductMapper;
 import com.erp.mapper.WarehouseMapper;
 import com.erp.service.InventoryQueryService;
+import com.erp.service.WarehouseService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +31,12 @@ public class InventoryQueryServiceImpl implements InventoryQueryService {
     private final InventoryLogMapper inventoryLogMapper;
     private final ProductMapper productMapper;
     private final WarehouseMapper warehouseMapper;
+    private final WarehouseService warehouseService;
+
+    @Override
+    public InventoryFormOptions getFormOptions(String countryCode) {
+        return new InventoryFormOptions(warehouseService.listActive(countryCode));
+    }
 
     @Override
     public List<Inventory> list(Long warehouseId, String countryCode) {

@@ -1,11 +1,14 @@
 package com.erp.service;
 
+import com.erp.dto.response.InventoryFormOptions;
 import com.erp.entity.Inventory;
 import com.erp.entity.InventoryLog;
 
 import java.util.List;
 
 public interface InventoryQueryService {
+
+    InventoryFormOptions getFormOptions(String countryCode);
 
     List<Inventory> list(Long warehouseId, String countryCode);
 

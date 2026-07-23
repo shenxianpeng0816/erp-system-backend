@@ -6,6 +6,7 @@ import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CancelOrderRequest;
 import com.erp.dto.request.CreateOrderRequest;
 import com.erp.dto.response.OrderDetailData;
+import com.erp.dto.response.OrderFormOptions;
 import com.erp.dto.response.OrderPrintData;
 import com.erp.entity.ApprovalFlow;
 import com.erp.entity.SalesOrder;
@@ -24,6 +25,14 @@ import java.util.List;
 public class SalesOrderController {
 
     private final SalesOrderService orderService;
+
+    @GetMapping("/form-options")
+    @PreAuthorize("@ss.hasOrderForm()")
+    public Result<OrderFormOptions> formOptions(
+            @RequestParam(required = false) String countryCode,
+            @RequestParam(required = false) Long warehouseId) {
+        return Result.success(orderService.getFormOptions(countryCode, warehouseId));
+    }
 
     @PostMapping
     @PreAuthorize("@ss.hasPermi('erp:order:add')")

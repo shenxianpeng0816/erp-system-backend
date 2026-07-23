@@ -45,6 +45,11 @@ public class PermissionService {
                         + "erp:order:approve:finance,erp:order:approve:admin,erp:order:approve");
     }
 
+    /** New/edit order form options (same feature family). */
+    public boolean hasOrderForm() {
+        return hasAnyPermi("erp:order:add,erp:order:edit");
+    }
+
     /** roleKey without ROLE_ prefix, e.g. admin / sales */
     public boolean hasRole(String role) {
         if (!StringUtils.hasText(role)) return false;

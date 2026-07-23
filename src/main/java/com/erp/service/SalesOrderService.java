@@ -5,6 +5,7 @@ import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CancelOrderRequest;
 import com.erp.dto.request.CreateOrderRequest;
 import com.erp.dto.response.OrderDetailData;
+import com.erp.dto.response.OrderFormOptions;
 import com.erp.dto.response.OrderPrintData;
 import com.erp.entity.ApprovalFlow;
 import com.erp.entity.SalesOrder;
@@ -26,6 +27,8 @@ public interface SalesOrderService {
     OrderPrintData getPrintData(Long orderId);
     /** Order page bundle: header + lines + customers + approval history. */
     OrderDetailData getDetailData(Long orderId);
+    /** Warehouses (+ products when warehouseId set) for create/edit forms. */
+    OrderFormOptions getFormOptions(String countryCode, Long warehouseId);
     /** Ensures the current user may read this order (used for items & approvals). */
     void assertOrderViewable(Long orderId);
     List<ApprovalFlow> listApprovalHistory(Long orderId);

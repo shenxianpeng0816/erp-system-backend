@@ -3,6 +3,7 @@ package com.erp.controller;
 import com.erp.common.dto.PageResult;
 import com.erp.common.result.Result;
 import com.erp.dto.request.CreateStockTransferRequest;
+import com.erp.dto.response.TransferFormOptions;
 import com.erp.entity.StockTransfer;
 import com.erp.entity.StockTransferItem;
 import com.erp.service.StockTransferService;
@@ -18,6 +19,13 @@ import java.util.List;
 public class StockTransferController {
 
     private final StockTransferService stockTransferService;
+
+    @GetMapping("/form-options")
+    @PreAuthorize("@ss.hasPermi('erp:transfer:list')")
+    public Result<TransferFormOptions> formOptions(
+            @RequestParam(required = false) Long fromWarehouseId) {
+        return Result.success(stockTransferService.getFormOptions(fromWarehouseId));
+    }
 
     @GetMapping
     @PreAuthorize("@ss.hasPermi('erp:transfer:list')")

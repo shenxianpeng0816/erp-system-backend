@@ -10,12 +10,14 @@ import com.erp.dto.request.ApprovalRequest;
 import com.erp.dto.request.CancelOrderRequest;
 import com.erp.dto.request.CreateOrderRequest;
 import com.erp.dto.response.OrderDetailData;
+import com.erp.dto.response.OrderFormOptions;
 import com.erp.dto.response.OrderPrintData;
 import com.erp.entity.*;
 import com.erp.mapper.*;
 import com.erp.security.PermissionService;
 import com.erp.service.DocSequenceService;
 import com.erp.service.InventoryService;
+import com.erp.service.ProductService;
 import com.erp.service.SalesOrderService;
 import com.erp.service.StockChangeContext;
 import com.erp.service.WarehouseService;
@@ -55,6 +57,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final ProductMapper productMapper;
     private final WarehouseService warehouseService;
     private final WarehouseMapper warehouseMapper;
+    private final ProductService productService;
     private final PermissionService permissionService;
 
     private static final String STATUS_DRAFT = "DRAFT";
@@ -305,6 +308,18 @@ public class SalesOrderServiceImpl implements SalesOrderService {
                 ? customerMapper.selectById(order.getBillToCustomerId()) : null;
         List<ApprovalFlow> approvals = listApprovalHistory(orderId);
         return new OrderDetailData(order, items, shipTo, billTo, approvals);
+    }
+
+    @Override
+    public OrderFormOptions getFormOptions(String countryCode, Long warehouseId) {
+        OrderFormOptions opts = new OrderFormOptions();
+        opts.setWarehouses(warehouseService.listActive(countryCode));
+        if (warehouseId != null && warehouseId > 0) {
+            opts.setProducts(productService.listProducts(warehouseId, countryCode));
+        } else {
+            opts.setProducts(List.of());
+        }
+        return opts;
     }
 
     /** Fills display names for list and detail APIs (salesperson, ship-to, bill-to). */

@@ -7,6 +7,7 @@ import com.erp.common.dto.PageResult;
 import com.erp.common.exception.BusinessException;
 import com.erp.dto.request.CreateInboundRequest;
 import com.erp.dto.request.RejectInboundRequest;
+import com.erp.dto.response.InboundFormOptions;
 import com.erp.entity.InboundItem;
 import com.erp.entity.InboundOrder;
 import com.erp.entity.User;
@@ -18,6 +19,7 @@ import com.erp.mapper.WarehouseMapper;
 import com.erp.service.DocSequenceService;
 import com.erp.service.InboundService;
 import com.erp.service.InventoryService;
+import com.erp.service.ProductService;
 import com.erp.service.StockChangeContext;
 import com.erp.service.WarehouseService;
 import com.erp.util.SecurityUtil;
@@ -46,7 +48,29 @@ public class InboundServiceImpl implements InboundService {
     private final DocSequenceService docSequenceService;
     private final WarehouseService warehouseService;
     private final InventoryService inventoryService;
+    private final ProductService productService;
     private final WarehouseMapper warehouseMapper;
+
+    @Override
+    public InboundFormOptions getFormOptions(Long warehouseId) {
+        InboundFormOptions opts = new InboundFormOptions();
+        opts.setWarehouses(warehouseService.listActive(null));
+        List<User> operators = userMapper.selectList(new LambdaQueryWrapper<User>()
+                .eq(User::getStatus, 1)
+                .in(User::getRole, List.copyOf(INBOUND_OPERATOR_ROLES))
+                .orderByAsc(User::getRealName));
+        // Strip password hashes from form dropdown payload
+        for (User u : operators) {
+            u.setPassword(null);
+        }
+        opts.setOperators(operators);
+        if (warehouseId != null && warehouseId > 0) {
+            opts.setProducts(productService.listProducts(warehouseId, null));
+        } else {
+            opts.setProducts(List.of());
+        }
+        return opts;
+    }
 
     @Override
     public PageResult<InboundOrder> pageList(Long warehouseId, long page, long size) {
