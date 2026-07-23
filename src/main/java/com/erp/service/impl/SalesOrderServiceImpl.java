@@ -56,12 +56,14 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     private final PermissionService permissionService;
 
     private static final String STATUS_DRAFT = "DRAFT";
-    private static final String STATUS_PENDING_FINANCE = "PENDING_FINANCE_APPROVAL";
-    private static final String STATUS_PENDING_ADMIN = "PENDING_ADMIN_APPROVAL";
-    private static final String STATUS_PENDING_LEGACY = "PENDING_APPROVAL";
+    private static final String STATUS_PENDING_FIRST = "PENDING_FIRST_APPROVAL";
+    private static final String STATUS_PENDING_FINAL = "PENDING_FINAL_APPROVAL";
     private static final String STATUS_APPROVED = "APPROVED";
-    private static final String PERM_APPROVE_FINANCE = "erp:order:approve:finance";
-    private static final String PERM_APPROVE_ADMIN = "erp:order:approve:admin";
+    private static final String PERM_APPROVE_FIRST = "erp:order:approve:first";
+    private static final String PERM_APPROVE_FINAL = "erp:order:approve:final";
+    /** Legacy permission codes (pre rename) */
+    private static final String PERM_APPROVE_FIRST_LEGACY = "erp:order:approve:finance";
+    private static final String PERM_APPROVE_FINAL_LEGACY = "erp:order:approve:admin";
     private static final String PERM_APPROVE_LEGACY = "erp:order:approve";
 
     @Override
@@ -130,7 +132,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
             throw new BusinessException("Only DRAFT orders can be submitted");
         }
 
-        order.setStatus(STATUS_PENDING_FINANCE);
+        order.setStatus(STATUS_PENDING_FIRST);
         order.setRejectReason(null);
         orderMapper.updateById(order);
 
@@ -155,11 +157,6 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         if (order == null) throw new BusinessException("Order not found");
 
         String status = order.getStatus();
-        // Legacy single-step pending is treated as admin final
-        if (STATUS_PENDING_LEGACY.equals(status)) {
-            status = STATUS_PENDING_ADMIN;
-            order.setStatus(STATUS_PENDING_ADMIN);
-        }
         assertCanActOnPendingStatus(status);
 
         ApprovalFlow flow = approvalMapper.selectOne(
@@ -190,12 +187,12 @@ public class SalesOrderServiceImpl implements SalesOrderService {
 
         // APPROVE
         flow.setStatus("APPROVED");
-        if (STATUS_PENDING_FINANCE.equals(status)) {
+        if (STATUS_PENDING_FIRST.equals(status)) {
             ApprovalFlow next = newApprovalStep(orderId, flow.getStep() + 1);
             approvalMapper.insert(next);
-            order.setStatus(STATUS_PENDING_ADMIN);
+            order.setStatus(STATUS_PENDING_FINAL);
             order.setRejectReason(null);
-        } else if (STATUS_PENDING_ADMIN.equals(status)) {
+        } else if (STATUS_PENDING_FINAL.equals(status)) {
             order.setStatus(STATUS_APPROVED);
             order.setRejectReason(null);
             generateInvoice(order);
@@ -269,7 +266,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     public List<SalesOrder> listPendingApprovals() {
         List<SalesOrder> list = orderMapper.findPendingApproval();
         List<SalesOrder> filtered = list.stream()
-                .filter(o -> isPendingVisibleToCurrentUser(normalizePendingStatus(o.getStatus())))
+                .filter(o -> isPendingVisibleToCurrentUser(o.getStatus()))
                 .toList();
         enrichCustomerNames(filtered);
         return filtered;
@@ -428,19 +425,15 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     /** Pending approvals + post-approval pipeline (invoice / outbound linked). */
     private static boolean isApprovalPipelineStatus(String status) {
         if (status == null) return false;
-        return STATUS_PENDING_FINANCE.equals(status)
-                || STATUS_PENDING_ADMIN.equals(status)
-                || STATUS_PENDING_LEGACY.equals(status)
+        return STATUS_PENDING_FIRST.equals(status)
+                || STATUS_PENDING_FINAL.equals(status)
                 || STATUS_APPROVED.equals(status)
                 || "SHIPPED".equals(status)
                 || "CONFIRMED".equals(status);
     }
 
     private boolean canViewViaApprovalPermission(String status) {
-        boolean hasFirst = permissionService.hasPermi(PERM_APPROVE_FINANCE);
-        boolean hasFinal = permissionService.hasPermi(PERM_APPROVE_ADMIN)
-                || permissionService.hasPermi(PERM_APPROVE_LEGACY);
-        if (!hasFirst && !hasFinal) {
+        if (!hasFirstApprovePerm() && !hasFinalApprovePerm()) {
             return false;
         }
         return isApprovalPipelineStatus(status);
@@ -470,9 +463,8 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         }
         String st = order.getStatus();
         if (!STATUS_DRAFT.equals(st)
-                && !STATUS_PENDING_FINANCE.equals(st)
-                && !STATUS_PENDING_ADMIN.equals(st)
-                && !STATUS_PENDING_LEGACY.equals(st)
+                && !STATUS_PENDING_FIRST.equals(st)
+                && !STATUS_PENDING_FINAL.equals(st)
                 && !"REJECTED".equals(st)) {
             throw new BusinessException("Only draft, pending approval, or rejected orders can be deleted");
         }
@@ -488,9 +480,7 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         if (order == null) throw new BusinessException("Order not found");
 
         String st = order.getStatus();
-        boolean pending = STATUS_PENDING_FINANCE.equals(st)
-                || STATUS_PENDING_ADMIN.equals(st)
-                || STATUS_PENDING_LEGACY.equals(st);
+        boolean pending = STATUS_PENDING_FIRST.equals(st) || STATUS_PENDING_FINAL.equals(st);
         if (!STATUS_DRAFT.equals(st) && !pending) {
             throw new BusinessException("Only draft or pending approval orders can be edited");
         }
@@ -750,15 +740,14 @@ public class SalesOrderServiceImpl implements SalesOrderService {
     }
 
     private void assertCanActOnPendingStatus(String status) {
-        if (STATUS_PENDING_FINANCE.equals(status)) {
-            if (!permissionService.hasPermi(PERM_APPROVE_FINANCE)) {
+        if (STATUS_PENDING_FIRST.equals(status)) {
+            if (!hasFirstApprovePerm()) {
                 throw new BusinessException("First approval permission required");
             }
             return;
         }
-        if (STATUS_PENDING_ADMIN.equals(status)) {
-            if (!permissionService.hasPermi(PERM_APPROVE_ADMIN)
-                    && !permissionService.hasPermi(PERM_APPROVE_LEGACY)) {
+        if (STATUS_PENDING_FINAL.equals(status)) {
+            if (!hasFinalApprovePerm()) {
                 throw new BusinessException("Final approval permission required");
             }
             return;
@@ -766,22 +755,25 @@ public class SalesOrderServiceImpl implements SalesOrderService {
         throw new BusinessException("Order is not pending approval");
     }
 
-    private boolean isPendingVisibleToCurrentUser(String normalizedStatus) {
-        if (STATUS_PENDING_FINANCE.equals(normalizedStatus)) {
-            return permissionService.hasPermi(PERM_APPROVE_FINANCE);
+    private boolean isPendingVisibleToCurrentUser(String status) {
+        if (STATUS_PENDING_FIRST.equals(status)) {
+            return hasFirstApprovePerm();
         }
-        if (STATUS_PENDING_ADMIN.equals(normalizedStatus)) {
-            return permissionService.hasPermi(PERM_APPROVE_ADMIN)
-                    || permissionService.hasPermi(PERM_APPROVE_LEGACY);
+        if (STATUS_PENDING_FINAL.equals(status)) {
+            return hasFinalApprovePerm();
         }
         return false;
     }
 
-    private static String normalizePendingStatus(String status) {
-        if (STATUS_PENDING_LEGACY.equals(status)) {
-            return STATUS_PENDING_ADMIN;
-        }
-        return status;
+    private boolean hasFirstApprovePerm() {
+        return permissionService.hasPermi(PERM_APPROVE_FIRST)
+                || permissionService.hasPermi(PERM_APPROVE_FIRST_LEGACY);
+    }
+
+    private boolean hasFinalApprovePerm() {
+        return permissionService.hasPermi(PERM_APPROVE_FINAL)
+                || permissionService.hasPermi(PERM_APPROVE_FINAL_LEGACY)
+                || permissionService.hasPermi(PERM_APPROVE_LEGACY);
     }
 
     private ApprovalFlow newApprovalStep(Long orderId, int step) {

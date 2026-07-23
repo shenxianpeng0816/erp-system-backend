@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS `sales_order` (
     `ship_to_customer_id` BIGINT       NOT NULL COMMENT 'goods delivered to this customer',
     `bill_to_customer_id` BIGINT       NOT NULL COMMENT 'invoice / payment from this customer',
     `country_code`        VARCHAR(2)   NOT NULL DEFAULT 'KE' COMMENT 'ISO 3166-1 alpha-2 e.g. KE UG TZ',
-    `status`              ENUM('DRAFT','PENDING_APPROVAL','PENDING_FINANCE_APPROVAL','PENDING_ADMIN_APPROVAL','APPROVED','REJECTED','SHIPPED','CONFIRMED','CANCELLED')
+    `status`              ENUM('DRAFT','PENDING_FIRST_APPROVAL','PENDING_FINAL_APPROVAL','APPROVED','REJECTED','SHIPPED','CONFIRMED','CANCELLED')
                           NOT NULL DEFAULT 'DRAFT',
     `total_amount`        DECIMAL(15,2) NOT NULL DEFAULT 0.00,
     `payment_method`      VARCHAR(50)  DEFAULT NULL COMMENT 'Bank Transfer / Mpesa etc.',

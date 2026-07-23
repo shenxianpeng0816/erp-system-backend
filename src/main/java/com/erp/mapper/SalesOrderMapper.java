@@ -15,7 +15,7 @@ public interface SalesOrderMapper extends BaseMapper<SalesOrder> {
 
     @Select("""
             SELECT * FROM sales_order
-            WHERE status IN ('PENDING_FINANCE_APPROVAL', 'PENDING_ADMIN_APPROVAL', 'PENDING_APPROVAL')
+            WHERE status IN ('PENDING_FIRST_APPROVAL', 'PENDING_FINAL_APPROVAL')
             ORDER BY created_at ASC
             """)
     List<SalesOrder> findPendingApproval();
